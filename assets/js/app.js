@@ -6,6 +6,12 @@ let alertsData = [];
 let decisionsData = [];
 let alertSortState = { key: 'created_at', direction: 'desc' };
 let decisionSortState = { key: 'created_at', direction: 'desc' };
+let worldMap = null;
+let worldMapMode = 'alerts';
+let worldMapData = {
+    alerts: { values: {}, max: 0 },
+    decisions: { values: {}, max: 0 }
+};
 
 // Utility functions
 function normalizeString(value) {
@@ -109,6 +115,82 @@ function getCountryFlag(countryCode) {
     return String.fromCodePoint(...codePoints);
 }
 
+function buildMapDataset(rows) {
+    const values = {};
+    let max = 0;
+    (rows || []).forEach(row => {
+        if (!row.country) return;
+        const code = row.country.toUpperCase();
+        const count = Number(row.count) || 0;
+        values[code] = count;
+        if (count > max) {
+            max = count;
+        }
+    });
+    return { values, max };
+}
+
+function updateMapLegend(mode) {
+    const legend = document.getElementById('mapLegend');
+    if (!legend) return;
+    const dataset = worldMapData[mode] || { max: 0 };
+    const label = mode === 'decisions' ? 'banů' : 'alertů';
+    const gradient = mode === 'decisions'
+        ? 'linear-gradient(90deg, #fee2e2, #dc2626)'
+        : 'linear-gradient(90deg, #dbeafe, #2563eb)';
+    legend.innerHTML = dataset.max
+        ? `<span>0</span><span class="legend-gradient" style="background:${gradient}"></span><span>${dataset.max}</span><span class="legend-label">Počet ${label}</span>`
+        : `<span class="legend-empty">Žádná data pro mapu (${label}).</span>`;
+}
+
+function renderWorldMap() {
+    const container = document.getElementById('worldMap');
+    if (!container || typeof jsVectorMap === 'undefined') return;
+
+    const dataset = worldMapData[worldMapMode] || { values: {}, max: 0 };
+    const scale = worldMapMode === 'decisions'
+        ? ['#fee2e2', '#dc2626']
+        : ['#dbeafe', '#2563eb'];
+
+    if (worldMap) {
+        worldMap.destroy();
+    }
+
+    worldMap = new jsVectorMap({
+        selector: '#worldMap',
+        map: 'world',
+        zoomButtons: false,
+        backgroundColor: 'transparent',
+        regionStyle: {
+            initial: {
+                fill: '#e5e7eb',
+                stroke: '#ffffff',
+                strokeWidth: 0.6
+            },
+            hover: {
+                fill: '#93c5fd'
+            },
+            selected: {
+                fill: '#1d4ed8'
+            }
+        },
+        series: {
+            regions: [{
+                values: dataset.values,
+                scale: scale,
+                normalizeFunction: 'polynomial'
+            }]
+        }
+    });
+
+    updateMapLegend(worldMapMode);
+}
+
+function setWorldMapMode(mode) {
+    worldMapMode = mode;
+    renderWorldMap();
+}
+
 // API calls
 async function apiGet(endpoint) {
     try {
@@ -203,6 +285,12 @@ async function loadDashboard() {
             updateIpsTable(stats.top_ips);
         }
 
+        if (stats.top_countries || stats.top_decision_countries) {
+            worldMapData.alerts = buildMapDataset(stats.top_countries || []);
+            worldMapData.decisions = buildMapDataset(stats.top_decision_countries || []);
+            renderWorldMap();
+        }
+
     } catch (error) {
         console.error('Failed to load dashboard:', error);
     }
@@ -291,6 +379,11 @@ function updateCountriesTable(data) {
                 <span class="country-flag">${getCountryFlag(row.country)}</span>
                 ${row.country || 'Unknown'}
             </td>
+            <td>
+                <button class="map-mini" data-country="${row.country || ''}" title="Zobrazit na mapě">
+                    <i class="fas fa-map-marked-alt"></i>
+                </button>
+            </td>
             <td>${row.count}</td>
         </tr>
     `).join('');
@@ -302,7 +395,11 @@ function updateIpsTable(data) {
 
     tbody.innerHTML = data.map(row => `
         <tr>
-            <td>${row.ip || 'Unknown'}</td>
+            <td>
+                ${row.ip
+        ? `<span class="ip-action" data-ip="${row.ip}" data-tooltip="Kliknutím přidáte dlouhodobý ban">${row.ip}</span>`
+        : '<span class="muted">Unknown</span>'}
+            </td>
             <td>${row.count}</td>
         </tr>
     `).join('');
@@ -684,8 +781,37 @@ function showAddDecisionModal() {
     modal.classList.add('active');
 }
 
+function showLongTermBanModal(ip) {
+    const modal = document.getElementById('longTermBanModal');
+    if (!modal) return;
+    const ipInput = document.getElementById('longTermBanIp');
+    if (ipInput) {
+        ipInput.value = ip || '';
+    }
+    modal.classList.add('active');
+}
+
+function focusCountryOnMap(countryCode) {
+    if (!worldMap || !countryCode) return;
+    const code = countryCode.toUpperCase();
+    try {
+        worldMap.clearSelectedRegions();
+        worldMap.setSelectedRegions([code]);
+        worldMap.setFocus({ region: code, animate: true, scale: 2 });
+    } catch (error) {
+        console.warn('Map focus failed:', error);
+    }
+}
+
 // Modal handling
 window.addEventListener('DOMContentLoaded', () => {
+    const mapModeSelect = document.getElementById('mapMode');
+    if (mapModeSelect) {
+        mapModeSelect.addEventListener('change', (event) => {
+            setWorldMapMode(event.target.value);
+        });
+    }
+
     document.querySelectorAll('.modal-close').forEach(closeBtn => {
         closeBtn.addEventListener('click', (e) => {
             e.target.closest('.modal').classList.remove('active');
@@ -740,6 +866,25 @@ window.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const countriesTable = document.getElementById('countriesTable');
+    if (countriesTable) {
+        countriesTable.addEventListener('click', (event) => {
+            const button = event.target.closest('.map-mini');
+            if (!button) return;
+            const code = button.dataset.country;
+            focusCountryOnMap(code);
+        });
+    }
+
+    const ipsTable = document.getElementById('ipsTable');
+    if (ipsTable) {
+        ipsTable.addEventListener('click', (event) => {
+            const target = event.target.closest('.ip-action');
+            if (!target) return;
+            showLongTermBanModal(target.dataset.ip);
+        });
+    }
+
     const addForm = document.getElementById('addDecisionForm');
     if (addForm) {
         addForm.addEventListener('submit', async (e) => {
@@ -757,6 +902,27 @@ window.addEventListener('DOMContentLoaded', () => {
                 loadDecisions();
             } catch (error) {
                 console.error('Failed to add decision:', error);
+            }
+        });
+    }
+
+    const longTermBanForm = document.getElementById('longTermBanForm');
+    if (longTermBanForm) {
+        longTermBanForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const ip = document.getElementById('longTermBanIp').value;
+            const duration = document.getElementById('longTermBanDuration').value;
+            const reason = document.getElementById('longTermBanReason').value;
+
+            try {
+                await apiPost('/decisions.php', { ip, duration, reason });
+                showNotification('Dlouhodobý ban byl úspěšně přidán', 'success');
+                document.getElementById('longTermBanModal').classList.remove('active');
+                longTermBanForm.reset();
+                loadDashboard();
+            } catch (error) {
+                console.error('Failed to add long-term decision:', error);
             }
         });
     }

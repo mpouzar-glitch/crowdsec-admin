@@ -47,6 +47,23 @@ renderPageStart($appTitle . ' - Dashboard', 'dashboard', $appTitle);
         </div>
     </section>
 
+    <section class="card map-card">
+        <div class="card-header map-header">
+            <h2>Mapa světa</h2>
+            <div class="map-toolbar">
+                <label for="mapMode">Vybarvit podle</label>
+                <select id="mapMode">
+                    <option value="alerts" selected>Alertů</option>
+                    <option value="decisions">Banů</option>
+                </select>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="world-map" id="worldMap"></div>
+            <div class="map-legend" id="mapLegend"></div>
+        </div>
+    </section>
+
     <section class="grid-2">
         <div class="card">
             <div class="card-header">
@@ -57,6 +74,7 @@ renderPageStart($appTitle . ' - Dashboard', 'dashboard', $appTitle);
                     <thead>
                         <tr>
                             <th>Země</th>
+                            <th>Mapa</th>
                             <th>Počet</th>
                         </tr>
                     </thead>
@@ -83,6 +101,35 @@ renderPageStart($appTitle . ' - Dashboard', 'dashboard', $appTitle);
         </div>
     </section>
 
+    <div id="longTermBanModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close">×</button>
+            <h3>Dlouhodobý ban</h3>
+            <form id="longTermBanForm" class="form-grid">
+                <div class="form-group">
+                    <label>IP adresa</label>
+                    <input type="text" id="longTermBanIp" required placeholder="192.168.1.1">
+                </div>
+                <div class="form-group">
+                    <label>Doba trvání</label>
+                    <select id="longTermBanDuration">
+                        <option value="168h">7 dnů</option>
+                        <option value="720h" selected>30 dnů</option>
+                        <option value="2160h">90 dnů</option>
+                        <option value="4320h">180 dnů</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Důvod</label>
+                    <input type="text" id="longTermBanReason" value="manual" placeholder="manual">
+                </div>
+                <button type="submit" class="btn">Přidat dlouhodobý ban</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/js/jsvectormap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/maps/world.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="/assets/js/app.js"></script>
     <script>

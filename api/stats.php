@@ -49,6 +49,19 @@ try {
     $stmt->execute([$since]);
     $stats['top_countries'] = $stmt->fetchAll();
 
+    // Top decision countries
+    $stmt = $db->prepare("
+        SELECT a.source_country as country, COUNT(*) as count
+        FROM decisions d
+        INNER JOIN alerts a ON d.alert_decisions = a.id
+        WHERE d.created_at >= ? AND a.source_country IS NOT NULL
+        GROUP BY a.source_country
+        ORDER BY count DESC
+        LIMIT 10
+    ");
+    $stmt->execute([$since]);
+    $stats['top_decision_countries'] = $stmt->fetchAll();
+
     // Top IPs
     $stmt = $db->prepare("
         SELECT source_ip as ip, COUNT(*) as count 
