@@ -28,9 +28,43 @@ renderPageStart($appTitle . ' - Decisions', 'decisions', $appTitle);
         </div>
     </section>
 
+    <section class="table-filters">
+        <div class="filter-group">
+            <label for="decisionFilterValue">IP / Hodnota</label>
+            <input type="text" id="decisionFilterValue" data-filter-key="value" list="decisionValueList" placeholder="např. 10.0.0.1">
+            <datalist id="decisionValueList"></datalist>
+        </div>
+        <div class="filter-group">
+            <label for="decisionFilterScenario">Scénář</label>
+            <input type="text" id="decisionFilterScenario" data-filter-key="scenario" list="decisionScenarioList" placeholder="např. ssh-bf">
+            <datalist id="decisionScenarioList"></datalist>
+        </div>
+        <div class="filter-group">
+            <label for="decisionFilterType">Typ</label>
+            <input type="text" id="decisionFilterType" data-filter-key="type" list="decisionTypeList" placeholder="např. ban">
+            <datalist id="decisionTypeList"></datalist>
+        </div>
+        <div class="filter-group">
+            <label for="decisionFilterCountry">Země</label>
+            <input type="text" id="decisionFilterCountry" data-filter-key="country" list="decisionCountryList" placeholder="např. CZ">
+            <datalist id="decisionCountryList"></datalist>
+        </div>
+        <div class="filter-group">
+            <label for="decisionFilterStatus">Status</label>
+            <input type="text" id="decisionFilterStatus" data-filter-key="status" list="decisionStatusList" placeholder="Aktivní / Expirované">
+            <datalist id="decisionStatusList">
+                <option value="Aktivní"></option>
+                <option value="Expirované"></option>
+            </datalist>
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-ghost" type="button" onclick="clearDecisionFilters()">Vyčistit filtry</button>
+        </div>
+    </section>
+
     <section class="card">
         <div class="card-body">
-            <table class="data-table" id="decisionsTable">
+            <table class="data-table data-table-compact" id="decisionsTable">
                 <thead>
                     <tr>
                         <th>ID</th>

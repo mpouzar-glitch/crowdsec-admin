@@ -23,9 +23,34 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
         </div>
     </section>
 
+    <section class="table-filters">
+        <div class="filter-group">
+            <label for="alertFilterScenario">Scénář</label>
+            <input type="text" id="alertFilterScenario" data-filter-key="scenario" list="alertScenarioList" placeholder="např. ssh-bf">
+            <datalist id="alertScenarioList"></datalist>
+        </div>
+        <div class="filter-group">
+            <label for="alertFilterIp">IP adresa</label>
+            <input type="text" id="alertFilterIp" data-filter-key="ip" list="alertIpList" placeholder="např. 192.168.1.1">
+            <datalist id="alertIpList"></datalist>
+        </div>
+        <div class="filter-group">
+            <label for="alertFilterCountry">Země</label>
+            <input type="text" id="alertFilterCountry" data-filter-key="country" list="alertCountryList" placeholder="např. CZ">
+            <datalist id="alertCountryList"></datalist>
+        </div>
+        <div class="filter-group">
+            <label for="alertFilterDecisions">Rozhodnutí</label>
+            <input type="text" id="alertFilterDecisions" data-filter-key="decisions" placeholder="např. 1">
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-ghost" type="button" onclick="clearAlertFilters()">Vyčistit filtry</button>
+        </div>
+    </section>
+
     <section class="card">
         <div class="card-body">
-            <table class="data-table" id="alertsTable">
+            <table class="data-table data-table-compact" id="alertsTable">
                 <thead>
                     <tr>
                         <th>ID</th>

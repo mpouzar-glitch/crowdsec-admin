@@ -6,6 +6,25 @@ let alertsData = [];
 let decisionsData = [];
 
 // Utility functions
+function normalizeString(value) {
+    return (value ?? '').toString().toLowerCase().trim();
+}
+
+function matchesFilter(value, filterValue) {
+    if (!filterValue) return true;
+    return normalizeString(value).includes(filterValue);
+}
+
+function uniqueValues(values) {
+    return Array.from(new Set(values.filter(Boolean))).sort();
+}
+
+function setDatalistOptions(id, options) {
+    const datalist = document.getElementById(id);
+    if (!datalist) return;
+    datalist.innerHTML = options.map(option => `<option value="${option}"></option>`).join('');
+}
+
 function formatDate(dateString) {
     const date = new Date(dateString);
     return date.toLocaleString('cs-CZ');
@@ -237,6 +256,7 @@ function updateIpsTable(data) {
 async function loadAlerts() {
     try {
         alertsData = await apiGet('/alerts.php');
+        updateAlertFilterOptions();
         renderAlerts();
     } catch (error) {
         console.error('Failed to load alerts:', error);
@@ -247,26 +267,38 @@ function renderAlerts() {
     const tbody = document.querySelector('#alertsTable tbody');
     if (!tbody) return;
 
-    const searchTerm = document.getElementById('searchAlerts')?.value.toLowerCase() || '';
+    const filters = getAlertFilters();
 
     const filtered = alertsData.filter(alert => {
-        const searchString = `${alert.id} ${alert.scenario} ${alert.source_ip}`.toLowerCase();
-        return searchString.includes(searchTerm);
+        const searchString = normalizeString(`${alert.id} ${alert.scenario} ${alert.source_ip}`);
+        const scenarioValue = normalizeString(alert.scenario);
+        const ipValue = normalizeString(alert.source_ip);
+        const countryValue = normalizeString(alert.source_country);
+        const decisionsCount = `${alert.decisions ? alert.decisions.length : 0}`;
+
+        return (
+            matchesFilter(searchString, filters.search) &&
+            matchesFilter(scenarioValue, filters.scenario) &&
+            matchesFilter(ipValue, filters.ip) &&
+            matchesFilter(countryValue, filters.country) &&
+            matchesFilter(decisionsCount, filters.decisions)
+        );
     });
 
     tbody.innerHTML = filtered.map(alert => {
         const decisionsCount = alert.decisions ? alert.decisions.length : 0;
         const flag = getCountryFlag(alert.source_country);
+        const scenarioLabel = alert.scenario?.split('/').pop() || '';
 
         return `
             <tr>
-                <td>${alert.id}</td>
+                <td data-filter-target="searchAlerts" data-filter-value="${alert.id}">${alert.id}</td>
                 <td>${formatRelativeTime(alert.created_at)}</td>
-                <td title="${alert.scenario}">${alert.scenario.split('/').pop()}</td>
-                <td>${alert.source_ip || '-'}</td>
-                <td>${flag} ${alert.source_country || '-'}</td>
+                <td title="${alert.scenario}" data-filter-target="alertFilterScenario" data-filter-value="${alert.scenario}">${scenarioLabel}</td>
+                <td data-filter-target="alertFilterIp" data-filter-value="${alert.source_ip || ''}">${alert.source_ip || '-'}</td>
+                <td data-filter-target="alertFilterCountry" data-filter-value="${alert.source_country || ''}">${flag} ${alert.source_country || '-'}</td>
                 <td>${alert.events_count || 0}</td>
-                <td>${decisionsCount}</td>
+                <td data-filter-target="alertFilterDecisions" data-filter-value="${decisionsCount}">${decisionsCount}</td>
                 <td>
                     <button class="btn btn-small" onclick="viewAlert(${alert.id})">Detail</button>
                     <button class="btn btn-small btn-danger" onclick="deleteAlert(${alert.id})">Smazat</button>
@@ -364,12 +396,37 @@ function refreshAlerts() {
     showNotification('Data obnovena', 'success');
 }
 
+function getAlertFilters() {
+    return {
+        search: normalizeString(document.getElementById('searchAlerts')?.value),
+        scenario: normalizeString(document.getElementById('alertFilterScenario')?.value),
+        ip: normalizeString(document.getElementById('alertFilterIp')?.value),
+        country: normalizeString(document.getElementById('alertFilterCountry')?.value),
+        decisions: normalizeString(document.getElementById('alertFilterDecisions')?.value)
+    };
+}
+
+function updateAlertFilterOptions() {
+    setDatalistOptions('alertScenarioList', uniqueValues(alertsData.map(alert => alert.scenario?.split('/').pop())));
+    setDatalistOptions('alertIpList', uniqueValues(alertsData.map(alert => alert.source_ip)));
+    setDatalistOptions('alertCountryList', uniqueValues(alertsData.map(alert => alert.source_country)));
+}
+
+function clearAlertFilters() {
+    const inputs = document.querySelectorAll('#searchAlerts, #alertFilterScenario, #alertFilterIp, #alertFilterCountry, #alertFilterDecisions');
+    inputs.forEach(input => {
+        if (input) input.value = '';
+    });
+    renderAlerts();
+}
+
 // Decisions functions
 async function loadDecisions() {
     try {
         const includeExpired = document.getElementById('includeExpired')?.checked || false;
         const url = includeExpired ? '/decisions.php?include_expired=true' : '/decisions.php';
         decisionsData = await apiGet(url);
+        updateDecisionFilterOptions();
         renderDecisions();
     } catch (error) {
         console.error('Failed to load decisions:', error);
@@ -381,10 +438,18 @@ function renderDecisions() {
     if (!tbody) return;
 
     const hideDuplicates = document.getElementById('hideDuplicates')?.checked || false;
+    const filters = getDecisionFilters();
 
     const filtered = decisionsData.filter(decision => {
         if (hideDuplicates && decision.is_duplicate) return false;
-        return true;
+        const statusLabel = decision.expired ? 'expirované' : 'aktivní';
+        return (
+            matchesFilter(decision.value, filters.value) &&
+            matchesFilter(decision.scenario, filters.scenario) &&
+            matchesFilter(decision.detail.type, filters.type) &&
+            matchesFilter(decision.detail.country, filters.country) &&
+            matchesFilter(statusLabel, filters.status)
+        );
     });
 
     tbody.innerHTML = filtered.map(decision => {
@@ -399,16 +464,19 @@ function renderDecisions() {
 
         const flag = getCountryFlag(decision.detail.country);
 
+        const statusLabel = expired ? 'Expirované' : 'Aktivní';
+        const scenarioLabel = decision.scenario?.split('/').pop() || '';
+
         return `
             <tr class="${expired ? 'expired' : ''}">
-                <td>${decision.id}</td>
+                <td data-filter-target="decisionFilterValue" data-filter-value="${decision.id}">${decision.id}</td>
                 <td>${formatRelativeTime(decision.created_at)}</td>
-                <td>${decision.value}</td>
-                <td>${decision.detail.type}</td>
-                <td title="${decision.scenario}">${decision.scenario.split('/').pop()}</td>
-                <td>${flag} ${decision.detail.country}</td>
+                <td data-filter-target="decisionFilterValue" data-filter-value="${decision.value}">${decision.value}</td>
+                <td data-filter-target="decisionFilterType" data-filter-value="${decision.detail.type}">${decision.detail.type}</td>
+                <td title="${decision.scenario}" data-filter-target="decisionFilterScenario" data-filter-value="${decision.scenario}">${scenarioLabel}</td>
+                <td data-filter-target="decisionFilterCountry" data-filter-value="${decision.detail.country}">${flag} ${decision.detail.country}</td>
                 <td>${formatDate(decision.detail.expiration)}</td>
-                <td>${statusBadge} ${duplicateBadge}</td>
+                <td data-filter-target="decisionFilterStatus" data-filter-value="${statusLabel}">${statusBadge} ${duplicateBadge}</td>
                 <td>
                     ${!expired ? `<button class="btn btn-small btn-danger" onclick="deleteDecision(${decision.id})">Smazat</button>` : '-'}
                 </td>
@@ -438,6 +506,31 @@ function refreshDecisions() {
     showNotification('Data obnovena', 'success');
 }
 
+function getDecisionFilters() {
+    return {
+        value: normalizeString(document.getElementById('decisionFilterValue')?.value),
+        scenario: normalizeString(document.getElementById('decisionFilterScenario')?.value),
+        type: normalizeString(document.getElementById('decisionFilterType')?.value),
+        country: normalizeString(document.getElementById('decisionFilterCountry')?.value),
+        status: normalizeString(document.getElementById('decisionFilterStatus')?.value)
+    };
+}
+
+function updateDecisionFilterOptions() {
+    setDatalistOptions('decisionValueList', uniqueValues(decisionsData.map(decision => decision.value)));
+    setDatalistOptions('decisionScenarioList', uniqueValues(decisionsData.map(decision => decision.scenario?.split('/').pop())));
+    setDatalistOptions('decisionTypeList', uniqueValues(decisionsData.map(decision => decision.detail.type)));
+    setDatalistOptions('decisionCountryList', uniqueValues(decisionsData.map(decision => decision.detail.country)));
+}
+
+function clearDecisionFilters() {
+    const inputs = document.querySelectorAll('#decisionFilterValue, #decisionFilterScenario, #decisionFilterType, #decisionFilterCountry, #decisionFilterStatus');
+    inputs.forEach(input => {
+        if (input) input.value = '';
+    });
+    renderDecisions();
+}
+
 function showAddDecisionModal() {
     const modal = document.getElementById('addDecisionModal');
     if (!modal) return;
@@ -463,6 +556,46 @@ window.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('searchAlerts');
     if (searchInput) {
         searchInput.addEventListener('input', renderAlerts);
+    }
+
+    document.querySelectorAll('[data-filter-key]').forEach(input => {
+        input.addEventListener('input', () => {
+            if (input.id.startsWith('alert')) {
+                renderAlerts();
+            } else {
+                renderDecisions();
+            }
+        });
+    });
+
+    const alertsTable = document.getElementById('alertsTable');
+    if (alertsTable) {
+        alertsTable.addEventListener('click', (event) => {
+            const cell = event.target.closest('[data-filter-target]');
+            if (!cell) return;
+            const targetId = cell.dataset.filterTarget;
+            const value = cell.dataset.filterValue ?? '';
+            const input = document.getElementById(targetId);
+            if (input) {
+                input.value = value;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+    }
+
+    const decisionsTable = document.getElementById('decisionsTable');
+    if (decisionsTable) {
+        decisionsTable.addEventListener('click', (event) => {
+            const cell = event.target.closest('[data-filter-target]');
+            if (!cell) return;
+            const targetId = cell.dataset.filterTarget;
+            const value = cell.dataset.filterValue ?? '';
+            const input = document.getElementById(targetId);
+            if (input) {
+                input.value = value;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
     }
 
     const addForm = document.getElementById('addDecisionForm');

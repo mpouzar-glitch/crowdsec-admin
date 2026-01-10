@@ -5,11 +5,10 @@ function renderPageStart($pageTitle, $activeMenu, $appTitle = 'CrowdSec Admin') 
     $user = getCurrentUser();
     $username = $user['username'] ?? 'unknown';
     $menuItems = [
-        'dashboard' => ['label' => 'Dashboard', 'href' => '/index.php'],
-        'alerts' => ['label' => 'Alerts', 'href' => '/alerts.php'],
-        'decisions' => ['label' => 'Decisions', 'href' => '/decisions.php'],
-        'users' => ['label' => 'Users', 'href' => '/users.php'],
-        'audit' => ['label' => 'Audit Log', 'href' => '/auditlog.php']
+        'dashboard' => ['label' => 'Dashboard', 'href' => '/index.php', 'icon' => 'fa-chart-line'],
+        'alerts' => ['label' => 'Alerts', 'href' => '/alerts.php', 'icon' => 'fa-bell'],
+        'decisions' => ['label' => 'Decisions', 'href' => '/decisions.php', 'icon' => 'fa-gavel'],
+        'audit' => ['label' => 'Audit Log', 'href' => '/auditlog.php', 'icon' => 'fa-clipboard-list']
     ];
 
     echo "<!DOCTYPE html>\n";
@@ -38,7 +37,8 @@ function renderPageStart($pageTitle, $activeMenu, $appTitle = 'CrowdSec Admin') 
     echo "                <div class=\"nav-menu\" id=\"navMenu\">\n";
     foreach ($menuItems as $key => $item) {
         $activeClass = $key === $activeMenu ? 'active' : '';
-        echo "                    <a class=\"nav-item {$activeClass}\" href=\"{$item['href']}\">{$item['label']}</a>\n";
+        $icon = $item['icon'] ?? 'fa-circle';
+        echo "                    <a class=\"nav-item {$activeClass}\" href=\"{$item['href']}\"><i class=\"fas {$icon}\"></i>{$item['label']}</a>\n";
     }
     echo "                    <div class=\"nav-user\">\n";
     echo "                        <span class=\"user-name\">{$username}</span>\n";

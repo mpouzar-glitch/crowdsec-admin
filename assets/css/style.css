@@ -82,6 +82,9 @@ a {
     font-weight: 500;
     border-radius: 12px;
     transition: background 0.2s ease, color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .nav-item:hover {
@@ -94,6 +97,10 @@ a {
     color: #ffffff;
     border-bottom: 3px solid var(--primary);
     border-radius: 12px 12px 0 0;
+}
+
+.nav-item i {
+    font-size: 14px;
 }
 
 .nav-user {
@@ -304,6 +311,44 @@ a {
     align-items: center;
 }
 
+.table-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    padding: 16px 20px;
+    border-radius: 16px;
+    background: var(--card-bg);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-group label {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.filter-group input {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #f8fafc;
+    font-size: 13px;
+}
+
+.filter-actions {
+    display: flex;
+    align-items: flex-end;
+}
+
 .input-group {
     position: relative;
 }
@@ -372,6 +417,25 @@ a {
     width: 100%;
     border-collapse: collapse;
     font-size: 14px;
+}
+
+.data-table-compact thead {
+    background: #1f2937;
+}
+
+.data-table-compact th {
+    color: #f8fafc;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 12px;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.data-table-compact td {
+    font-size: 13px;
 }
 
 .data-table thead {
