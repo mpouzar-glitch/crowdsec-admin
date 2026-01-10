@@ -5,8 +5,9 @@ class CrowdSecAPI {
     private $password;
     private $token;
     private $apiKey;
-    private $userAgent = 'crowdsec-admin';
+    private $userAgent = 'curl/8.14.1';
     private $tokenFile = __DIR__ . '/../cache/token.json';
+    private $debug = true; // Zapni debug mode
     
     public function __construct() {
         $env = $this->loadEnv();
@@ -14,12 +15,19 @@ class CrowdSecAPI {
         $this->username = $env['CROWDSEC_USER'] ?? '';
         $this->password = $env['CROWDSEC_PASSWORD'] ?? '';
         $this->apiKey = $env['CROWDSEC_API_KEY'] ?? ($env['CROWDSEC_BOUNCER_KEY'] ?? '');
+        
         if ($this->username !== '' && $this->password !== '') {
             $this->apiKey = '';
         }
         
         if (!$this->apiKey) {
             $this->loadToken();
+        }
+    }
+    
+    private function debug($message) {
+        if ($this->debug) {
+            error_log('[CrowdSec] ' . $message);
         }
     }
     
@@ -30,9 +38,17 @@ class CrowdSecAPI {
         if (file_exists($envFile)) {
             $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             foreach ($lines as $line) {
-                if (strpos(trim($line), '#') === 0) continue;
-                list($key, $value) = explode('=', $line, 2);
-                $env[trim($key)] = trim($value);
+                $line = trim($line);
+                if (empty($line) || strpos($line, '#') === 0) continue;
+                
+                $parts = explode('=', $line, 2);
+                if (count($parts) === 2) {
+                    $key = trim($parts[0]);
+                    $value = trim($parts[1]);
+                    // Remove quotes if present
+                    $value = trim($value, '"\'');
+                    $env[$key] = $value;
+                }
             }
         }
         
@@ -49,29 +65,50 @@ class CrowdSecAPI {
             if ($data && isset($data['token']) && isset($data['expires'])) {
                 if (time() < $data['expires']) {
                     $this->token = $data['token'];
+                    $this->debug("Loaded valid token from cache");
                     return;
+                } else {
+                    $this->debug("Token expired, will get new one");
                 }
             }
         }
+        
         $this->login();
     }
     
-    private function saveToken($token, $expiresAt = null, $expiresIn = 3600) {
+    private function decodeJwtPayload($token) {
+        $parts = explode('.', $token);
+        if (count($parts) !== 3) {
+            return null;
+        }
+        
+        $payload = base64_decode(strtr($parts[1], '-_', '+/'));
+        return json_decode($payload, true);
+    }
+    
+    private function saveToken($token) {
         $dir = dirname($this->tokenFile);
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
 
-        if ($expiresAt === null) {
-            $expiresAt = time() + $expiresIn;
+        $payload = $this->decodeJwtPayload($token);
+        $expiresAt = null;
+        
+        if ($payload && isset($payload['exp'])) {
+            $expiresAt = (int)$payload['exp'];
+        } else {
+            $expiresAt = time() + 3600;
         }
         
         $data = [
             'token' => $token,
-            'expires' => $expiresAt - 60 // 60s buffer
+            'expires' => $expiresAt - 60,
+            'created_at' => time()
         ];
         
-        file_put_contents($this->tokenFile, json_encode($data));
+        file_put_contents($this->tokenFile, json_encode($data, JSON_PRETTY_PRINT));
+        $this->debug("Token saved, expires at: " . date('Y-m-d H:i:s', $expiresAt));
     }
     
     public function login() {
@@ -83,6 +120,8 @@ class CrowdSecAPI {
             throw new Exception('CrowdSec credentials are missing.');
         }
 
+        $this->debug("Attempting login for machine: {$this->username}");
+        
         $url = $this->baseUrl . '/v1/watchers/login';
         
         $data = [
@@ -90,22 +129,23 @@ class CrowdSecAPI {
             'password' => $this->password
         ];
         
+        // Debug credentials (mask password)
+        $this->debug("Login URL: $url");
+        $this->debug("Machine ID: {$this->username}");
+        $this->debug("Password length: " . strlen($this->password));
+        
         $response = $this->request('POST', $url, $data, false);
         
         if (isset($response['token'])) {
             $this->token = $response['token'];
-            $expiresAt = null;
-            if (isset($response['expire'])) {
-                $expiresAt = strtotime($response['expire']);
-                if ($expiresAt === false) {
-                    $expiresAt = null;
-                }
-            }
-            $this->saveToken($this->token, $expiresAt);
+            $this->saveToken($this->token);
+            $this->debug("Login successful, token received");
             return true;
         }
         
-        throw new Exception('Failed to authenticate with CrowdSec LAPI');
+        $errorMsg = $response['message'] ?? json_encode($response);
+        $this->debug("Login failed: $errorMsg");
+        throw new Exception('Failed to authenticate with CrowdSec LAPI: ' . $errorMsg);
     }
     
     private function request($method, $url, $data = null, $useAuth = true) {
@@ -114,8 +154,10 @@ class CrowdSecAPI {
         $headers = ['Content-Type: application/json'];
         if ($useAuth && $this->apiKey) {
             $headers[] = 'X-Api-Key: ' . $this->apiKey;
+            $this->debug("Using API Key authentication");
         } elseif ($useAuth && $this->token) {
             $headers[] = 'Authorization: Bearer ' . $this->token;
+            $this->debug("Using JWT Bearer token authentication");
         }
         
         curl_setopt_array($ch, [
@@ -123,27 +165,56 @@ class CrowdSecAPI {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_USERAGENT => $this->userAgent,
-            CURLOPT_TIMEOUT => 30
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10
         ]);
         
         if ($method === 'POST') {
+            $jsonData = json_encode($data, JSON_UNESCAPED_SLASHES);
+            $this->debug("POST Request to: $url");
+            $this->debug("JSON Data: $jsonData");
+            
             curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonData);
         } elseif ($method === 'DELETE') {
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+            $this->debug("DELETE Request to: $url");
+        } else {
+            $this->debug("GET Request to: $url");
         }
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
         
-        if ($httpCode === 401 && $useAuth && !$this->apiKey) {
+        $this->debug("Response Code: $httpCode");
+        if ($response) {
+            $this->debug("Response Body: " . substr($response, 0, 500));
+        }
+        
+        // Handle 401 only if not already in login process
+        if ($httpCode === 401 && $useAuth && !$this->apiKey && strpos($url, '/watchers/login') === false) {
+            $this->debug("Got 401, clearing token and re-authenticating");
+            
+            if (file_exists($this->tokenFile)) {
+                unlink($this->tokenFile);
+            }
+            $this->token = null;
+            
             $this->login();
             return $this->request($method, $url, $data, true);
         }
         
+        if ($curlError) {
+            $this->debug("CURL Error: $curlError");
+            throw new Exception("CURL error: $curlError");
+        }
+        
         if ($httpCode >= 400) {
-            throw new Exception("API request failed with status $httpCode: $response");
+            $errorMsg = $response ?: "HTTP $httpCode";
+            $this->debug("API Error: $errorMsg");
+            throw new Exception("API request failed: $errorMsg");
         }
         
         return json_decode($response, true);
@@ -197,5 +268,23 @@ class CrowdSecAPI {
     public function deleteDecision($id) {
         $url = $this->baseUrl . '/v1/decisions/' . $id;
         return $this->request('DELETE', $url);
+    }
+    
+    public function getTokenInfo() {
+        if (!$this->token) {
+            return null;
+        }
+        
+        $payload = $this->decodeJwtPayload($this->token);
+        if (!$payload) {
+            return null;
+        }
+        
+        return [
+            'machine_id' => $payload['id'] ?? null,
+            'expires_at' => $payload['exp'] ?? null,
+            'issued_at' => $payload['orig_iat'] ?? null,
+            'expires_in' => isset($payload['exp']) ? ($payload['exp'] - time()) : null
+        ];
     }
 }
