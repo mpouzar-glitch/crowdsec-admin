@@ -88,10 +88,11 @@ try {
 
     // Alerts by host (CrowdSec service)
     $stmt = $db->prepare("
-        SELECT COALESCE(machine_id, 'Neznámý') as host, COUNT(*) as count
-        FROM alerts
-        WHERE created_at >= ?
-        GROUP BY machine_id
+        SELECT COALESCE(m.machine_id, 'Neznámý') as host, COUNT(*) as count
+        FROM alerts a
+        LEFT JOIN machines m ON a.machine_alerts = m.id
+        WHERE a.created_at >= ?
+        GROUP BY m.machine_id
         ORDER BY count DESC
         LIMIT 7
     ");

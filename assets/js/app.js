@@ -152,6 +152,7 @@ function renderWorldMap() {
     if (worldMap) {
         worldMap.destroy();
     }
+    container.innerHTML = '';
 
     worldMap = new jsVectorMap({
         selector: '#worldMap',

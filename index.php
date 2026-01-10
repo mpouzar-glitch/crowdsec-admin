@@ -47,28 +47,30 @@ renderPageStart($appTitle . ' - Dashboard', 'dashboard', $appTitle);
         </div>
     </section>
 
-    <section class="card map-card">
-        <div class="card-header map-header">
-            <h2>Mapa světa</h2>
-            <div class="map-toolbar">
-                <label for="mapMode">Vybarvit podle</label>
-                <select id="mapMode">
-                    <option value="alerts" selected>Alertů</option>
-                    <option value="decisions">Banů</option>
-                </select>
+    <section class="grid-2">
+        <div class="card map-card">
+            <div class="card-header map-header">
+                <h2>Mapa světa</h2>
+                <div class="map-toolbar">
+                    <label for="mapMode">Vybarvit podle</label>
+                    <select id="mapMode">
+                        <option value="alerts" selected>Alertů</option>
+                        <option value="decisions">Banů</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="world-map" id="worldMap"></div>
+                <div class="map-legend" id="mapLegend"></div>
             </div>
         </div>
-        <div class="card-body">
-            <div class="map-split">
-                <div class="map-panel">
-                    <div class="world-map" id="worldMap"></div>
-                    <div class="map-legend" id="mapLegend"></div>
-                </div>
-                <div class="map-panel">
-                    <h3 class="chart-title">Alerty podle hostů</h3>
-                    <div class="chart-container">
-                        <canvas id="sourcesChart"></canvas>
-                    </div>
+        <div class="card">
+            <div class="card-header">
+                <h2>Alerty podle hostů</h2>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="sourcesChart"></canvas>
                 </div>
             </div>
         </div>

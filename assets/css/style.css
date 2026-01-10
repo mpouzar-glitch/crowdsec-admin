@@ -486,6 +486,11 @@ a {
 
 .country-flag {
     margin-right: 6px;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+    font-size: 16px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
 }
 
 .map-card .card-body {
@@ -532,6 +537,20 @@ a {
     min-height: 360px;
     border-radius: 16px;
     background: #f8fafc;
+}
+
+.world-map .jvm-region {
+    fill: #e5e7eb;
+    stroke: #ffffff;
+    stroke-width: 0.6;
+}
+
+.world-map .jvm-region:hover {
+    fill: #93c5fd;
+}
+
+.world-map .jvm-region.jvm-region-selected {
+    fill: #1d4ed8;
 }
 
 .chart-title {
