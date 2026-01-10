@@ -4,6 +4,7 @@ class CrowdSecAPI {
     private $username;
     private $password;
     private $token;
+    private $apiKey;
     private $tokenFile = __DIR__ . '/../cache/token.json';
     
     public function __construct() {
@@ -11,8 +12,11 @@ class CrowdSecAPI {
         $this->baseUrl = rtrim($env['CROWDSEC_URL'] ?? 'http://localhost:8080', '/');
         $this->username = $env['CROWDSEC_USER'] ?? '';
         $this->password = $env['CROWDSEC_PASSWORD'] ?? '';
+        $this->apiKey = $env['CROWDSEC_API_KEY'] ?? ($env['CROWDSEC_BOUNCER_KEY'] ?? '');
         
-        $this->loadToken();
+        if (!$this->apiKey) {
+            $this->loadToken();
+        }
     }
     
     private function loadEnv() {
@@ -32,6 +36,10 @@ class CrowdSecAPI {
     }
     
     private function loadToken() {
+        if ($this->apiKey) {
+            return;
+        }
+
         if (file_exists($this->tokenFile)) {
             $data = json_decode(file_get_contents($this->tokenFile), true);
             if ($data && isset($data['token']) && isset($data['expires'])) {
@@ -59,6 +67,14 @@ class CrowdSecAPI {
     }
     
     public function login() {
+        if ($this->apiKey) {
+            return true;
+        }
+
+        if ($this->username === '' || $this->password === '') {
+            throw new Exception('CrowdSec credentials are missing.');
+        }
+
         $url = $this->baseUrl . '/v1/watchers/login';
         
         $data = [
@@ -81,7 +97,9 @@ class CrowdSecAPI {
         $ch = curl_init();
         
         $headers = ['Content-Type: application/json'];
-        if ($useAuth && $this->token) {
+        if ($useAuth && $this->apiKey) {
+            $headers[] = 'X-Api-Key: ' . $this->apiKey;
+        } elseif ($useAuth && $this->token) {
             $headers[] = 'Authorization: Bearer ' . $this->token;
         }
         
@@ -103,7 +121,7 @@ class CrowdSecAPI {
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         
-        if ($httpCode === 401 && $useAuth) {
+        if ($httpCode === 401 && $useAuth && !$this->apiKey) {
             $this->login();
             return $this->request($method, $url, $data, true);
         }
@@ -165,4 +183,3 @@ class CrowdSecAPI {
         return $this->request('DELETE', $url);
     }
 }
-
