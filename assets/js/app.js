@@ -108,9 +108,10 @@ function formatRelativeTime(dateString) {
 }
 
 function getCountryFlagHtml(countryCode) {
-    if (!countryCode || countryCode.length !== 2) return '';
+    if (!countryCode) return '';
     const normalized = countryCode.toLowerCase();
-    return `<span class="flag-icon flag-icon-${normalized} country-flag" aria-label="${countryCode}"></span>`;
+    if (!/^[a-z]{2}$/.test(normalized)) return '';
+    return `<span class="fi fi-${normalized} country-flag" aria-label="${countryCode}"></span>`;
 }
 
 function buildMapDataset(rows) {
@@ -151,9 +152,9 @@ function renderWorldMap() {
     }
     container.innerHTML = '';
 
-    const mapName = jsVectorMap.maps?.world
-        ? 'world'
-        : (jsVectorMap.maps?.world_merc ? 'world_merc' : 'world');
+    const availableMaps = Object.keys(jsVectorMap.maps || {});
+    const mapName = availableMaps.find(name => name.startsWith('world')) || availableMaps[0];
+    if (!mapName) return;
 
     worldMap = new jsVectorMap({
         selector: '#worldMap',
