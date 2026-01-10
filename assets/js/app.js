@@ -526,7 +526,7 @@ function renderAlerts() {
 
     tbody.innerHTML = sorted.map(alert => {
         const decisionsCount = alert.decisions ? alert.decisions.length : 0;
-        const flag = getCountryFlag(alert.source_country);
+        const flag = getCountryFlagHtml(alert.source_country);
         const scenarioLabel = alert.scenario?.split('/').pop() || '';
         const machineLabel = alert.machine_id || '-';
 
@@ -566,7 +566,7 @@ function showAlertModal(alert) {
     if (!modal || !detail) return;
 
     const source = alert.source || {};
-    const flag = getCountryFlag(source.cn);
+    const flag = getCountryFlagHtml(source.cn);
 
     detail.innerHTML = `
         <h3>Alert #${alert.id}</h3>
@@ -748,7 +748,7 @@ function renderDecisions() {
             ? '<span class="badge badge-duplicate">Duplikát</span>'
             : '';
 
-        const flag = getCountryFlag(decision.detail.country);
+        const flag = getCountryFlagHtml(decision.detail.country);
 
         const statusLabel = expired ? 'Expirované' : 'Aktivní';
         const scenarioLabel = decision.scenario?.split('/').pop() || '';
