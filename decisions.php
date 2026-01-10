@@ -1,91 +1,77 @@
 <?php
-require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/layout.php';
+
+requireLogin();
 
 $env = loadEnv();
-$appTitle = 'CrowdSec Web UI';
+$appTitle = $env['APP_TITLE'] ?? 'CrowdSec Admin';
+
+renderPageStart($appTitle . ' - Decisions', 'decisions', $appTitle);
 ?>
-<!DOCTYPE html>
-<html lang="cs">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $appTitle ?> - Rozhodnutí</title>
-    <link rel="stylesheet" href="/assets/css/style.css">
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1><?= $appTitle ?></h1>
-            <nav>
-                <a href="/index.php">Dashboard</a>
-                <a href="/alerts.php">Alerty</a>
-                <a href="/decisions.php" class="active">Rozhodnutí</a>
-            </nav>
-        </header>
+    <section class="page-header">
+        <div>
+            <h1>RozhodnutÃ­</h1>
+            <p class="muted">AktivnÃ­ a expirovanÃ© bany.</p>
+        </div>
+        <div class="toolbar">
+            <label class="checkbox">
+                <input type="checkbox" id="includeExpired" onchange="loadDecisions()">
+                <span>Zobrazit expirovanÃ©</span>
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" id="hideDuplicates" checked onchange="filterDuplicates()">
+                <span>SkrÃ½t duplikÃ¡ty</span>
+            </label>
+            <button class="btn" onclick="showAddDecisionModal()">PÅ™idat ban</button>
+            <button class="btn btn-ghost" onclick="refreshDecisions()">Obnovit</button>
+        </div>
+    </section>
 
-        <main>
-            <div class="page-header">
-                <h2>Rozhodnutí (Bany)</h2>
-                <div class="filters">
-                    <label>
-                        <input type="checkbox" id="includeExpired" onchange="loadDecisions()"> 
-                        Zobrazit expirované
-                    </label>
-                    <label>
-                        <input type="checkbox" id="hideDuplicates" checked onchange="filterDuplicates()"> 
-                        Skrýt duplikáty
-                    </label>
-                    <button onclick="showAddDecisionModal()">Pøidat ban</button>
-                    <button onclick="refreshDecisions()">Obnovit</button>
-                </div>
-            </div>
+    <section class="card">
+        <div class="card-body">
+            <table class="data-table" id="decisionsTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>ÄŒas</th>
+                        <th>IP adresa</th>
+                        <th>Typ</th>
+                        <th>ScÃ©nÃ¡Å™</th>
+                        <th>ZemÄ›</th>
+                        <th>Expirace</th>
+                        <th>Status</th>
+                        <th>Akce</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
 
-            <div class="table-container">
-                <table id="decisionsTable">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Èas</th>
-                            <th>IP adresa</th>
-                            <th>Typ</th>
-                            <th>Scénáø</th>
-                            <th>Zemì</th>
-                            <th>Expirace</th>
-                            <th>Status</th>
-                            <th>Akce</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </main>
-    </div>
-
-    <!-- Modal pro pøidání banu -->
     <div id="addDecisionModal" class="modal">
         <div class="modal-content">
-            <span class="close">&times;</span>
-            <h3>Pøidat nový ban</h3>
-            <form id="addDecisionForm">
+            <button class="modal-close">Ã—</button>
+            <h3>PÅ™idat novÃ½ ban</h3>
+            <form id="addDecisionForm" class="form-grid">
                 <div class="form-group">
-                    <label>IP adresa:</label>
+                    <label>IP adresa</label>
                     <input type="text" id="banIp" required placeholder="192.168.1.1">
                 </div>
                 <div class="form-group">
-                    <label>Doba trvání:</label>
+                    <label>Doba trvÃ¡nÃ­</label>
                     <select id="banDuration">
                         <option value="1h">1 hodina</option>
                         <option value="4h" selected>4 hodiny</option>
                         <option value="24h">24 hodin</option>
-                        <option value="168h">7 dní</option>
+                        <option value="168h">7 dnÅ¯</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Dùvod:</label>
+                    <label>DÅ¯vod</label>
                     <input type="text" id="banReason" value="manual" placeholder="manual">
                 </div>
-                <button type="submit">Pøidat ban</button>
+                <button type="submit" class="btn">PÅ™idat ban</button>
             </form>
         </div>
     </div>
@@ -95,6 +81,5 @@ $appTitle = 'CrowdSec Web UI';
         loadDecisions();
         setInterval(loadDecisions, 30000);
     </script>
-</body>
-</html>
-
+<?php
+renderPageEnd();

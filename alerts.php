@@ -1,62 +1,51 @@
 <?php
-require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/layout.php';
+
+requireLogin();
 
 $env = loadEnv();
-$appTitle = 'CrowdSec Web UI';
+$appTitle = $env['APP_TITLE'] ?? 'CrowdSec Admin';
+
+renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
 ?>
-<!DOCTYPE html>
-<html lang="cs">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $appTitle ?> - Alerty</title>
-    <link rel="stylesheet" href="/assets/css/style.css">
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1><?= $appTitle ?></h1>
-            <nav>
-                <a href="/index.php">Dashboard</a>
-                <a href="/alerts.php" class="active">Alerty</a>
-                <a href="/decisions.php">Rozhodnut�</a>
-            </nav>
-        </header>
-
-        <main>
-            <div class="page-header">
-                <h2>Alerty</h2>
-                <div class="filters">
-                    <input type="text" id="searchAlerts" placeholder="Hledat..." />
-                    <button onclick="refreshAlerts()">Obnovit</button>
-                </div>
+    <section class="page-header">
+        <div>
+            <h1>Alerty</h1>
+            <p class="muted">Přehled všech incidentů v CrowdSec.</p>
+        </div>
+        <div class="toolbar">
+            <div class="input-group">
+                <span class="input-icon">🔍</span>
+                <input type="text" id="searchAlerts" placeholder="Hledat..." />
             </div>
+            <button class="btn" onclick="refreshAlerts()">Obnovit</button>
+        </div>
+    </section>
 
-            <div class="table-container">
-                <table id="alertsTable">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>�as</th>
-                            <th>Sc�n��</th>
-                            <th>IP adresa</th>
-                            <th>Zem�</th>
-                            <th>Po�et ud�lost�</th>
-                            <th>Rozhodnut�</th>
-                            <th>Akce</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </main>
-    </div>
+    <section class="card">
+        <div class="card-body">
+            <table class="data-table" id="alertsTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Čas</th>
+                        <th>Scénář</th>
+                        <th>IP adresa</th>
+                        <th>Země</th>
+                        <th>Počet událostí</th>
+                        <th>Rozhodnutí</th>
+                        <th>Akce</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
 
-    <!-- Modal pro detail alertu -->
     <div id="alertModal" class="modal">
         <div class="modal-content">
-            <span class="close">&times;</span>
+            <button class="modal-close">×</button>
             <div id="alertDetail"></div>
         </div>
     </div>
@@ -66,6 +55,5 @@ $appTitle = 'CrowdSec Web UI';
         loadAlerts();
         setInterval(loadAlerts, 30000);
     </script>
-</body>
-</html>
-
+<?php
+renderPageEnd();

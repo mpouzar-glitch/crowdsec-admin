@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
+
+requireLogin();
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -11,18 +14,17 @@ $since = date('Y-m-d H:i:s', (time() * 1000 - $lookbackMs) / 1000);
 
 try {
     $db = Database::getInstance()->getConnection();
-    
     $stats = [];
-    
+
     // Total alerts
     $stmt = $db->prepare("SELECT COUNT(*) as count FROM alerts WHERE created_at >= ?");
     $stmt->execute([$since]);
     $stats['total_alerts'] = $stmt->fetchColumn();
-    
+
     // Active decisions
     $stmt = $db->query("SELECT COUNT(*) as count FROM decisions WHERE until > NOW()");
     $stats['active_decisions'] = $stmt->fetchColumn();
-    
+
     // Top scenarios
     $stmt = $db->prepare("
         SELECT scenario, COUNT(*) as count 
@@ -34,7 +36,7 @@ try {
     ");
     $stmt->execute([$since]);
     $stats['top_scenarios'] = $stmt->fetchAll();
-    
+
     // Top countries
     $stmt = $db->prepare("
         SELECT source_country as country, COUNT(*) as count 
@@ -46,7 +48,7 @@ try {
     ");
     $stmt->execute([$since]);
     $stats['top_countries'] = $stmt->fetchAll();
-    
+
     // Top IPs
     $stmt = $db->prepare("
         SELECT source_ip as ip, COUNT(*) as count 
@@ -58,7 +60,7 @@ try {
     ");
     $stmt->execute([$since]);
     $stats['top_ips'] = $stmt->fetchAll();
-    
+
     // Alerts timeline (last 24h by hour)
     $stmt = $db->query("
         SELECT 
@@ -70,11 +72,10 @@ try {
         ORDER BY hour
     ");
     $stats['timeline_24h'] = $stmt->fetchAll();
-    
+
     jsonResponse($stats);
-    
+
 } catch (Exception $e) {
     error_log("Stats API Error: " . $e->getMessage());
     jsonResponse(['error' => $e->getMessage()], 500);
 }
-

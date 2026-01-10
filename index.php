@@ -1,103 +1,93 @@
 <?php
-require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/layout.php';
+
+requireLogin();
 
 $env = loadEnv();
-$appTitle = 'CrowdSec Web UI';
+$appTitle = $env['APP_TITLE'] ?? 'CrowdSec Admin';
+
+renderPageStart($appTitle . ' - Dashboard', 'dashboard', $appTitle);
 ?>
-<!DOCTYPE html>
-<html lang="cs">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $appTitle ?> - Dashboard</title>
-    <link rel="stylesheet" href="/assets/css/style.css">
+    <section class="cards-grid">
+        <div class="card stat-card">
+            <p class="stat-label">Celkem alert≈Ø</p>
+            <div class="stat-value" id="totalAlerts">-</div>
+        </div>
+        <div class="card stat-card">
+            <p class="stat-label">Aktivn√≠ bany</p>
+            <div class="stat-value" id="activeDecisions">-</div>
+        </div>
+        <div class="card stat-card">
+            <p class="stat-label">Top sc√©n√°≈ô</p>
+            <div class="stat-value stat-small" id="topScenario">-</div>
+        </div>
+        <div class="card stat-card">
+            <p class="stat-label">Top zemƒõ</p>
+            <div class="stat-value" id="topCountry">-</div>
+        </div>
+    </section>
+
+    <section class="grid-2">
+        <div class="card">
+            <div class="card-header">
+                <h2>Aktivita za posledn√≠ch 24 hodin</h2>
+            </div>
+            <div class="card-body">
+                <canvas id="timelineChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h2>Top 10 sc√©n√°≈ô≈Ø</h2>
+            </div>
+            <div class="card-body">
+                <canvas id="scenariosChart"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <section class="grid-2">
+        <div class="card">
+            <div class="card-header">
+                <h2>Top 10 zem√≠</h2>
+            </div>
+            <div class="card-body">
+                <table class="data-table" id="countriesTable">
+                    <thead>
+                        <tr>
+                            <th>Zemƒõ</th>
+                            <th>Poƒçet</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Top 10 IP adres</h2>
+            </div>
+            <div class="card-body">
+                <table class="data-table" id="ipsTable">
+                    <thead>
+                        <tr>
+                            <th>IP adresa</th>
+                            <th>Poƒçet</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1><?= $appTitle ?></h1>
-            <nav>
-                <a href="/index.php" class="active">Dashboard</a>
-                <a href="/alerts.php">Alerty</a>
-                <a href="/decisions.php">RozhodnutÌ</a>
-            </nav>
-        </header>
-
-        <main>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>Celkem alert˘</h3>
-                    <div class="stat-value" id="totalAlerts">-</div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3>AktivnÌ bany</h3>
-                    <div class="stat-value" id="activeDecisions">-</div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3>Top scÈn·¯</h3>
-                    <div class="stat-value small" id="topScenario">-</div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3>Top zemÏ</h3>
-                    <div class="stat-value" id="topCountry">-</div>
-                </div>
-            </div>
-
-            <div class="charts-grid">
-                <div class="chart-container">
-                    <h3>Aktivita za poslednÌch 24 hodin</h3>
-                    <canvas id="timelineChart"></canvas>
-                </div>
-                
-                <div class="chart-container">
-                    <h3>Top 10 scÈn·¯˘</h3>
-                    <canvas id="scenariosChart"></canvas>
-                </div>
-            </div>
-
-            <div class="tables-grid">
-                <div class="table-container">
-                    <h3>Top 10 zemÌ</h3>
-                    <table id="countriesTable">
-                        <thead>
-                            <tr>
-                                <th>ZemÏ</th>
-                                <th>PoËet</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-                
-                <div class="table-container">
-                    <h3>Top 10 IP adres</h3>
-                    <table id="ipsTable">
-                        <thead>
-                            <tr>
-                                <th>IP adresa</th>
-                                <th>PoËet</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-        </main>
-    </div>
-
     <script src="/assets/js/app.js"></script>
     <script>
-        // Load dashboard data
         loadDashboard();
-        
-        // Refresh every 30 seconds
         setInterval(loadDashboard, 30000);
     </script>
-</body>
-</html>
-
+<?php
+renderPageEnd();
