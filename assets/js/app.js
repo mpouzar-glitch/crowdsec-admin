@@ -107,13 +107,10 @@ function formatRelativeTime(dateString) {
     return `před ${diffDays} dny`;
 }
 
-function getCountryFlag(countryCode) {
+function getCountryFlagHtml(countryCode) {
     if (!countryCode || countryCode.length !== 2) return '';
-    const codePoints = countryCode
-        .toUpperCase()
-        .split('')
-        .map(char => 127397 + char.charCodeAt());
-    return String.fromCodePoint(...codePoints);
+    const normalized = countryCode.toLowerCase();
+    return `<span class="flag-icon flag-icon-${normalized} country-flag" aria-label="${countryCode}"></span>`;
 }
 
 function buildMapDataset(rows) {
@@ -154,9 +151,13 @@ function renderWorldMap() {
     }
     container.innerHTML = '';
 
+    const mapName = jsVectorMap.maps?.world
+        ? 'world'
+        : (jsVectorMap.maps?.world_merc ? 'world_merc' : 'world');
+
     worldMap = new jsVectorMap({
         selector: '#worldMap',
-        map: 'world',
+        map: mapName,
         zoomButtons: false,
         backgroundColor: 'transparent',
         regionStyle: {
@@ -305,8 +306,8 @@ async function loadDashboard() {
 
         if (stats.top_countries && stats.top_countries.length > 0) {
             const topCountry = stats.top_countries[0];
-            const flag = getCountryFlag(topCountry.country);
-            document.getElementById('topCountry').textContent =
+            const flag = getCountryFlagHtml(topCountry.country);
+            document.getElementById('topCountry').innerHTML =
                 `${flag} ${topCountry.country} (${topCountry.count})`;
         }
 
@@ -421,11 +422,11 @@ function updateCountriesTable(data) {
     tbody.innerHTML = data.map(row => `
         <tr>
             <td>
-                <span class="country-flag">${getCountryFlag(row.country)}</span>
+                ${getCountryFlagHtml(row.country)}
                 ${row.country || 'Unknown'}
             </td>
             <td>
-                <span class="country-flag">${getCountryFlag(row.country)}</span>
+                ${getCountryFlagHtml(row.country)}
             </td>
             <td>${row.count}</td>
         </tr>
