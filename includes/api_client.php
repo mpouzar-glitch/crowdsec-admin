@@ -5,6 +5,7 @@ class CrowdSecAPI {
     private $password;
     private $token;
     private $apiKey;
+    private $userAgent = 'crowdsec-admin';
     private $tokenFile = __DIR__ . '/../cache/token.json';
     
     public function __construct() {
@@ -13,6 +14,9 @@ class CrowdSecAPI {
         $this->username = $env['CROWDSEC_USER'] ?? '';
         $this->password = $env['CROWDSEC_PASSWORD'] ?? '';
         $this->apiKey = $env['CROWDSEC_API_KEY'] ?? ($env['CROWDSEC_BOUNCER_KEY'] ?? '');
+        if ($this->username !== '' && $this->password !== '') {
+            $this->apiKey = '';
+        }
         
         if (!$this->apiKey) {
             $this->loadToken();
@@ -107,6 +111,7 @@ class CrowdSecAPI {
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_USERAGENT => $this->userAgent,
             CURLOPT_TIMEOUT => 30
         ]);
         
