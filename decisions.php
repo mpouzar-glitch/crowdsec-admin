@@ -67,14 +67,14 @@ renderPageStart($appTitle . ' - Decisions', 'decisions', $appTitle);
             <table class="data-table data-table-compact" id="decisionsTable">
                 <thead>
                     <tr>
-                        <th>ID</th>
-                        <th>Čas</th>
-                        <th>IP adresa</th>
-                        <th>Typ</th>
-                        <th>Scénář</th>
-                        <th>Země</th>
-                        <th>Expirace</th>
-                        <th>Status</th>
+                        <th data-sort-key="id">ID <span class="sort-indicator"></span></th>
+                        <th data-sort-key="created_at">Čas <span class="sort-indicator"></span></th>
+                        <th data-sort-key="value">IP adresa <span class="sort-indicator"></span></th>
+                        <th data-sort-key="type">Typ <span class="sort-indicator"></span></th>
+                        <th data-sort-key="scenario">Scénář <span class="sort-indicator"></span></th>
+                        <th data-sort-key="country">Země <span class="sort-indicator"></span></th>
+                        <th data-sort-key="expiration">Expirace <span class="sort-indicator"></span></th>
+                        <th data-sort-key="status">Status <span class="sort-indicator"></span></th>
                         <th>Akce</th>
                     </tr>
                 </thead>

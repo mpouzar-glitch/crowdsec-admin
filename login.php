@@ -30,8 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body class="auth-page">
     <div class="auth-card">
-        <h1><?= htmlspecialchars($appTitle) ?></h1>
-        <p class="muted">Přihlaste se pro pokračování.</p>
+        <div class="auth-header">
+            <span class="auth-kicker">CrowdSec</span>
+            <h1 class="auth-title"><?= htmlspecialchars($appTitle) ?></h1>
+            <p class="auth-subtitle">Přihlaste se pro pokračování.</p>
+        </div>
 
         <?php if ($error): ?>
             <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>

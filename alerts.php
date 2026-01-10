@@ -15,10 +15,6 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
             <p class="muted">Přehled všech incidentů v CrowdSec.</p>
         </div>
         <div class="toolbar">
-            <div class="input-group">
-                <span class="input-icon">🔍</span>
-                <input type="text" id="searchAlerts" placeholder="Hledat..." />
-            </div>
             <button class="btn" onclick="refreshAlerts()">Obnovit</button>
         </div>
     </section>
@@ -53,13 +49,14 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
             <table class="data-table data-table-compact" id="alertsTable">
                 <thead>
                     <tr>
-                        <th>ID</th>
-                        <th>Čas</th>
-                        <th>Scénář</th>
-                        <th>IP adresa</th>
-                        <th>Země</th>
-                        <th>Počet událostí</th>
-                        <th>Rozhodnutí</th>
+                        <th data-sort-key="id">ID <span class="sort-indicator"></span></th>
+                        <th data-sort-key="created_at">Čas <span class="sort-indicator"></span></th>
+                        <th data-sort-key="scenario">Scénář <span class="sort-indicator"></span></th>
+                        <th data-sort-key="machine">Machine <span class="sort-indicator"></span></th>
+                        <th data-sort-key="source_ip">IP adresa <span class="sort-indicator"></span></th>
+                        <th data-sort-key="source_country">Země <span class="sort-indicator"></span></th>
+                        <th data-sort-key="events_count">Počet událostí <span class="sort-indicator"></span></th>
+                        <th data-sort-key="decisions_count">Rozhodnutí <span class="sort-indicator"></span></th>
                         <th>Akce</th>
                     </tr>
                 </thead>

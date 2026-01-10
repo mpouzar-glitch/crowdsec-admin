@@ -4,6 +4,8 @@ var API_BASE = '/api';
 // Cache for data
 let alertsData = [];
 let decisionsData = [];
+let alertSortState = { key: 'created_at', direction: 'desc' };
+let decisionSortState = { key: 'created_at', direction: 'desc' };
 
 // Utility functions
 function normalizeString(value) {
@@ -17,6 +19,60 @@ function matchesFilter(value, filterValue) {
 
 function uniqueValues(values) {
     return Array.from(new Set(values.filter(Boolean))).sort();
+}
+
+function compareValues(a, b, direction) {
+    const multiplier = direction === 'desc' ? -1 : 1;
+    if (a === b) return 0;
+    if (a === null || a === undefined) return 1 * multiplier;
+    if (b === null || b === undefined) return -1 * multiplier;
+
+    const aNumber = typeof a === 'number' && !Number.isNaN(a);
+    const bNumber = typeof b === 'number' && !Number.isNaN(b);
+
+    if (aNumber && bNumber) {
+        return (a - b) * multiplier;
+    }
+
+    return a.toString().localeCompare(b.toString(), 'cs-CZ', { numeric: true }) * multiplier;
+}
+
+function updateSortIndicators(tableId, sortState) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    table.querySelectorAll('th[data-sort-key]').forEach(th => {
+        const indicator = th.querySelector('.sort-indicator');
+        if (!indicator) return;
+        if (th.dataset.sortKey === sortState.key) {
+            indicator.textContent = sortState.direction === 'asc' ? '▲' : '▼';
+            th.classList.add('sorted');
+        } else {
+            indicator.textContent = '';
+            th.classList.remove('sorted');
+        }
+    });
+}
+
+function initializeSortableTable(tableId, sortState, renderFn) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+
+    table.querySelectorAll('th[data-sort-key]').forEach(th => {
+        th.classList.add('sortable');
+        th.addEventListener('click', () => {
+            const key = th.dataset.sortKey;
+            if (!key) return;
+            if (sortState.key === key) {
+                sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortState.key = key;
+                sortState.direction = 'asc';
+            }
+            renderFn();
+        });
+    });
+
+    updateSortIndicators(tableId, sortState);
 }
 
 function setDatalistOptions(id, options) {
@@ -270,14 +326,12 @@ function renderAlerts() {
     const filters = getAlertFilters();
 
     const filtered = alertsData.filter(alert => {
-        const searchString = normalizeString(`${alert.id} ${alert.scenario} ${alert.source_ip}`);
         const scenarioValue = normalizeString(alert.scenario);
         const ipValue = normalizeString(alert.source_ip);
         const countryValue = normalizeString(alert.source_country);
         const decisionsCount = `${alert.decisions ? alert.decisions.length : 0}`;
 
         return (
-            matchesFilter(searchString, filters.search) &&
             matchesFilter(scenarioValue, filters.scenario) &&
             matchesFilter(ipValue, filters.ip) &&
             matchesFilter(countryValue, filters.country) &&
@@ -285,16 +339,62 @@ function renderAlerts() {
         );
     });
 
-    tbody.innerHTML = filtered.map(alert => {
+    const sorted = filtered.sort((a, b) => {
+        const key = alertSortState.key;
+        let aValue = '';
+        let bValue = '';
+        switch (key) {
+            case 'id':
+                aValue = Number(a.id);
+                bValue = Number(b.id);
+                break;
+            case 'created_at':
+                aValue = new Date(a.created_at).getTime();
+                bValue = new Date(b.created_at).getTime();
+                break;
+            case 'scenario':
+                aValue = a.scenario || '';
+                bValue = b.scenario || '';
+                break;
+            case 'machine':
+                aValue = a.machine_id || '';
+                bValue = b.machine_id || '';
+                break;
+            case 'source_ip':
+                aValue = a.source_ip || '';
+                bValue = b.source_ip || '';
+                break;
+            case 'source_country':
+                aValue = a.source_country || '';
+                bValue = b.source_country || '';
+                break;
+            case 'events_count':
+                aValue = Number(a.events_count || 0);
+                bValue = Number(b.events_count || 0);
+                break;
+            case 'decisions_count':
+                aValue = a.decisions ? a.decisions.length : Number(a.decisions_count || 0);
+                bValue = b.decisions ? b.decisions.length : Number(b.decisions_count || 0);
+                break;
+            default:
+                aValue = a.scenario || '';
+                bValue = b.scenario || '';
+        }
+        return compareValues(aValue, bValue, alertSortState.direction);
+    });
+
+    tbody.innerHTML = sorted.map(alert => {
         const decisionsCount = alert.decisions ? alert.decisions.length : 0;
         const flag = getCountryFlag(alert.source_country);
         const scenarioLabel = alert.scenario?.split('/').pop() || '';
+        const machineLabel = alert.machine_id || '-';
 
         return `
             <tr>
-                <td data-filter-target="searchAlerts" data-filter-value="${alert.id}">${alert.id}</td>
+                <td>${alert.id}</td>
                 <td>${formatRelativeTime(alert.created_at)}</td>
                 <td title="${alert.scenario}" data-filter-target="alertFilterScenario" data-filter-value="${alert.scenario}">${scenarioLabel}</td>
+                <td>${machineLabel}</td>
                 <td data-filter-target="alertFilterIp" data-filter-value="${alert.source_ip || ''}">${alert.source_ip || '-'}</td>
                 <td data-filter-target="alertFilterCountry" data-filter-value="${alert.source_country || ''}">${flag} ${alert.source_country || '-'}</td>
                 <td>${alert.events_count || 0}</td>
@@ -306,6 +406,8 @@ function renderAlerts() {
             </tr>
         `;
     }).join('');
+
+    updateSortIndicators('alertsTable', alertSortState);
 }
 
 async function viewAlert(id) {
@@ -398,7 +500,6 @@ function refreshAlerts() {
 
 function getAlertFilters() {
     return {
-        search: normalizeString(document.getElementById('searchAlerts')?.value),
         scenario: normalizeString(document.getElementById('alertFilterScenario')?.value),
         ip: normalizeString(document.getElementById('alertFilterIp')?.value),
         country: normalizeString(document.getElementById('alertFilterCountry')?.value),
@@ -413,7 +514,7 @@ function updateAlertFilterOptions() {
 }
 
 function clearAlertFilters() {
-    const inputs = document.querySelectorAll('#searchAlerts, #alertFilterScenario, #alertFilterIp, #alertFilterCountry, #alertFilterDecisions');
+    const inputs = document.querySelectorAll('#alertFilterScenario, #alertFilterIp, #alertFilterCountry, #alertFilterDecisions');
     inputs.forEach(input => {
         if (input) input.value = '';
     });
@@ -452,7 +553,51 @@ function renderDecisions() {
         );
     });
 
-    tbody.innerHTML = filtered.map(decision => {
+    const sorted = filtered.sort((a, b) => {
+        const key = decisionSortState.key;
+        let aValue = '';
+        let bValue = '';
+        switch (key) {
+            case 'id':
+                aValue = Number(a.id);
+                bValue = Number(b.id);
+                break;
+            case 'created_at':
+                aValue = new Date(a.created_at).getTime();
+                bValue = new Date(b.created_at).getTime();
+                break;
+            case 'value':
+                aValue = a.value || '';
+                bValue = b.value || '';
+                break;
+            case 'type':
+                aValue = a.detail.type || '';
+                bValue = b.detail.type || '';
+                break;
+            case 'scenario':
+                aValue = a.scenario || '';
+                bValue = b.scenario || '';
+                break;
+            case 'country':
+                aValue = a.detail.country || '';
+                bValue = b.detail.country || '';
+                break;
+            case 'expiration':
+                aValue = new Date(a.detail.expiration).getTime();
+                bValue = new Date(b.detail.expiration).getTime();
+                break;
+            case 'status':
+                aValue = a.expired ? 1 : 0;
+                bValue = b.expired ? 1 : 0;
+                break;
+            default:
+                aValue = a.id;
+                bValue = b.id;
+        }
+        return compareValues(aValue, bValue, decisionSortState.direction);
+    });
+
+    tbody.innerHTML = sorted.map(decision => {
         const expired = decision.expired;
         const statusBadge = expired
             ? '<span class="badge badge-expired">Expirované</span>'
@@ -483,6 +628,8 @@ function renderDecisions() {
             </tr>
         `;
     }).join('');
+
+    updateSortIndicators('decisionsTable', decisionSortState);
 }
 
 async function deleteDecision(id) {
@@ -553,11 +700,6 @@ window.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const searchInput = document.getElementById('searchAlerts');
-    if (searchInput) {
-        searchInput.addEventListener('input', renderAlerts);
-    }
-
     document.querySelectorAll('[data-filter-key]').forEach(input => {
         input.addEventListener('input', () => {
             if (input.id.startsWith('alert')) {
@@ -618,4 +760,7 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    initializeSortableTable('alertsTable', alertSortState, renderAlerts);
+    initializeSortableTable('decisionsTable', decisionSortState, renderDecisions);
 });

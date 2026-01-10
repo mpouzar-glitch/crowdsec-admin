@@ -45,9 +45,11 @@ try {
                 a.source_as_name,
                 a.source_as_number,
                 a.simulated,
+                m.machine_id as machine_id,
                 COUNT(d.id) as decisions_count
             FROM alerts a
             LEFT JOIN decisions d ON d.alert_decisions = a.id
+            LEFT JOIN machines m ON m.id = a.machine_alerts
             WHERE a.created_at >= ?
             GROUP BY a.id
             ORDER BY a.created_at DESC
