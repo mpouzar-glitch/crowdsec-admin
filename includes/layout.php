@@ -9,6 +9,7 @@ function renderPageStart($pageTitle, $activeMenu, $appTitle = 'CrowdSec Admin') 
         'alerts' => ['label' => 'Alerts', 'href' => '/alerts.php', 'icon' => 'fa-bell'],
         'machines' => ['label' => 'Machines', 'href' => '/machines.php', 'icon' => 'fa-server'],
         'decisions' => ['label' => 'Decisions', 'href' => '/decisions.php', 'icon' => 'fa-gavel'],
+        'whitelist' => ['label' => 'Whitelist', 'href' => '/whitelist.php', 'icon' => 'fa-check-circle'],
         'audit' => ['label' => 'Audit Log', 'href' => '/auditlog.php', 'icon' => 'fa-clipboard-list']
     ];
 

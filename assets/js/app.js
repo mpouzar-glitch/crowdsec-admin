@@ -5,8 +5,11 @@ var API_BASE = '/api';
 let alertsData = [];
 let decisionsData = [];
 let machinesData = [];
+let whitelistData = [];
+let allowListsData = [];
 let alertSortState = { key: 'created_at', direction: 'desc' };
 let decisionSortState = { key: 'created_at', direction: 'desc' };
+let whitelistSortState = { key: 'created_at', direction: 'desc' };
 let worldMap = null;
 let worldMapMode = 'alerts';
 let alertFilterOptions = null;
@@ -655,6 +658,22 @@ async function apiPost(endpoint, data) {
     } catch (error) {
         console.error('API Error:', error);
         showNotification(`Chyba při odesílání dat: ${error.message}`, 'error');
+        throw error;
+    }
+}
+
+async function apiPut(endpoint, data) {
+    try {
+        const response = await fetch(`${API_BASE}${endpoint}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        showNotification(`Chyba při ukládání: ${error.message}`, 'error');
         throw error;
     }
 }
@@ -1386,6 +1405,174 @@ function clearDecisionFilters() {
     renderDecisions();
 }
 
+// Whitelist functions
+async function loadWhitelist() {
+    try {
+        whitelistData = await apiGet('/whitelist.php');
+        renderWhitelist();
+    } catch (error) {
+        console.error('Failed to load whitelist:', error);
+    }
+}
+
+async function loadAllowLists() {
+    try {
+        allowListsData = await apiGet('/allowlists.php');
+        renderAllowListOptions();
+    } catch (error) {
+        console.error('Failed to load allow lists:', error);
+    }
+}
+
+function renderAllowListOptions() {
+    const select = document.getElementById('whitelistList');
+    if (!select) return;
+    if (!allowListsData.length) {
+        select.innerHTML = '<option value="">Žádné whitelisty</option>';
+        select.disabled = true;
+        return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = allowListsData.map(list => `
+        <option value="${list.id}">${list.name}</option>
+    `).join('');
+}
+
+function renderWhitelist() {
+    const tbody = document.querySelector('#whitelistTable tbody');
+    if (!tbody) return;
+
+    if (!whitelistData.length) {
+        tbody.innerHTML = '<tr><td class="table-empty" colspan="8">Žádná data.</td></tr>';
+        return;
+    }
+
+    const valueFilter = normalizeString(document.getElementById('whitelistFilterCidr')?.value);
+    const commentFilter = normalizeString(document.getElementById('whitelistFilterReason')?.value);
+    const listFilter = normalizeString(document.getElementById('whitelistFilterList')?.value);
+
+    const filtered = whitelistData.filter(item => {
+        return (
+            matchesFilter(item.cidr, valueFilter) &&
+            matchesFilter(item.reason, commentFilter) &&
+            matchesFilter(item.list_name, listFilter)
+        );
+    });
+
+    const sorted = filtered.sort((a, b) => {
+        const key = whitelistSortState.key;
+        let aValue = '';
+        let bValue = '';
+        switch (key) {
+            case 'id':
+                aValue = Number(a.id);
+                bValue = Number(b.id);
+                break;
+            case 'list_name':
+                aValue = a.list_name || '';
+                bValue = b.list_name || '';
+                break;
+            case 'cidr':
+                aValue = a.cidr || '';
+                bValue = b.cidr || '';
+                break;
+            case 'reason':
+                aValue = a.reason || '';
+                bValue = b.reason || '';
+                break;
+            case 'expires_at':
+                aValue = a.expires_at ? new Date(a.expires_at).getTime() : null;
+                bValue = b.expires_at ? new Date(b.expires_at).getTime() : null;
+                break;
+            case 'created_at':
+                aValue = a.created_at ? new Date(a.created_at).getTime() : null;
+                bValue = b.created_at ? new Date(b.created_at).getTime() : null;
+                break;
+            case 'updated_at':
+                aValue = a.updated_at ? new Date(a.updated_at).getTime() : null;
+                bValue = b.updated_at ? new Date(b.updated_at).getTime() : null;
+                break;
+            default:
+                aValue = a.id;
+                bValue = b.id;
+        }
+        return compareValues(aValue, bValue, whitelistSortState.direction);
+    });
+
+    tbody.innerHTML = sorted.map(item => {
+        return `
+            <tr>
+                <td>${item.id}</td>
+                <td>${item.list_name ?? '-'}</td>
+                <td>${item.cidr}</td>
+                <td>${item.reason ?? '-'}</td>
+                <td>${item.expires_at ? formatDateTime(item.expires_at) : '-'}</td>
+                <td>${item.created_at ? formatDateTime(item.created_at) : '-'}</td>
+                <td>${item.updated_at ? formatDateTime(item.updated_at) : '-'}</td>
+                <td>
+                    <button class="btn btn-small btn-ghost" onclick='editWhitelistItem(${JSON.stringify(item)})'>Upravit</button>
+                    <button class="btn btn-small btn-danger" onclick="deleteWhitelistItem(${item.id})">Smazat</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    updateSortIndicators('whitelistTable', whitelistSortState);
+}
+
+function openWhitelistModal() {
+    const modal = document.getElementById('whitelistModal');
+    if (!modal) return;
+    if (!allowListsData.length) {
+        showNotification('Nejprve vytvořte whitelist (např. cscli allowlist create).', 'error');
+        return;
+    }
+    document.getElementById('whitelistModalTitle').textContent = 'Přidat položku';
+    document.getElementById('whitelistId').value = '';
+    document.getElementById('whitelistList').value = allowListsData[0]?.id ?? '';
+    document.getElementById('whitelistCidr').value = '';
+    document.getElementById('whitelistReason').value = '';
+    document.getElementById('whitelistExpiresAt').value = '';
+    modal.classList.add('active');
+}
+
+function editWhitelistItem(item) {
+    const modal = document.getElementById('whitelistModal');
+    if (!modal) return;
+    document.getElementById('whitelistModalTitle').textContent = 'Upravit položku';
+    document.getElementById('whitelistId').value = item.id;
+    document.getElementById('whitelistList').value = item.allow_list_id ?? '';
+    document.getElementById('whitelistCidr').value = item.cidr || '';
+    document.getElementById('whitelistReason').value = item.reason || '';
+    document.getElementById('whitelistExpiresAt').value = item.expires_at ? item.expires_at.replace(' ', 'T').slice(0, 16) : '';
+    modal.classList.add('active');
+}
+
+async function deleteWhitelistItem(id) {
+    if (!confirm('Opravdu chcete smazat tuto položku?')) return;
+    try {
+        await apiDelete(`/whitelist.php?id=${id}`);
+        showNotification('Whitelist položka byla smazána', 'success');
+        loadWhitelist();
+    } catch (error) {
+        console.error('Failed to delete whitelist item:', error);
+    }
+}
+
+function refreshWhitelist() {
+    loadWhitelist();
+    showNotification('Data obnovena', 'success');
+}
+
+function clearWhitelistFilters() {
+    const inputs = document.querySelectorAll('#whitelistFilterCidr, #whitelistFilterReason, #whitelistFilterList');
+    inputs.forEach(input => {
+        if (input) input.value = '';
+    });
+    renderWhitelist();
+}
+
 // Machines functions
 async function loadMachines() {
     try {
@@ -1534,6 +1721,11 @@ window.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const whitelistTable = document.getElementById('whitelistTable');
+    if (whitelistTable) {
+        initializeSortableTable('whitelistTable', whitelistSortState, renderWhitelist);
+    }
+
     const ipsTable = document.getElementById('ipsTable');
     if (ipsTable) {
         ipsTable.addEventListener('click', (event) => {
@@ -1588,6 +1780,46 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    const whitelistForm = document.getElementById('whitelistForm');
+    if (whitelistForm) {
+        whitelistForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const id = document.getElementById('whitelistId').value;
+            const allowListId = document.getElementById('whitelistList').value;
+            const value = document.getElementById('whitelistCidr').value;
+            const comment = document.getElementById('whitelistReason').value;
+            const expiresAtInput = document.getElementById('whitelistExpiresAt').value;
+            const expiresAt = expiresAtInput ? expiresAtInput.replace('T', ' ') + ':00' : null;
+
+            try {
+                if (!allowListId) {
+                    showNotification('Vyberte whitelist (allow list).', 'error');
+                    return;
+                }
+                if (id) {
+                    await apiPut('/whitelist.php', { id, allow_list_id: allowListId, cidr: value, reason: comment, expires_at: expiresAt });
+                    showNotification('Whitelist položka byla upravena', 'success');
+                } else {
+                    await apiPost('/whitelist.php', { allow_list_id: allowListId, cidr: value, reason: comment, expires_at: expiresAt });
+                    showNotification('Whitelist položka byla přidána', 'success');
+                }
+                document.getElementById('whitelistModal').classList.remove('active');
+                whitelistForm.reset();
+                loadWhitelist();
+            } catch (error) {
+                console.error('Failed to save whitelist item:', error);
+            }
+        });
+    }
+
+    const whitelistFilters = document.querySelectorAll('#whitelistFilterCidr, #whitelistFilterReason, #whitelistFilterList');
+    whitelistFilters.forEach(input => {
+        input.addEventListener('input', () => {
+            renderWhitelist();
+        });
+    });
 
     initializeSortableTable('alertsTable', alertSortState, renderAlerts);
     initializeSortableTable('decisionsTable', decisionSortState, renderDecisions);
