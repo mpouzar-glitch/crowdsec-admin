@@ -1143,6 +1143,63 @@ function showAlertModal(alert) {
 
     const source = alert.source || {};
     const flag = getCountryFlagHtml(source.cn);
+    const events = Array.isArray(alert.events_detail) && alert.events_detail.length > 0
+        ? alert.events_detail
+        : Array.isArray(alert.events)
+            ? alert.events
+            : [];
+
+    const hiddenEventKeys = new Set([
+        'timestamp',
+        'isineu',
+        'isocode',
+        'country',
+        'sourcecountry',
+        'stat',
+        'cn'
+    ]);
+
+    const normalizeEventKey = (key) => (key ?? '')
+        .toString()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+
+    const eventsHtml = events.length > 0
+        ? `
+            <div class="alert-events">
+                ${events.map(event => {
+                    const eventTime = event.time ? formatDateTime(event.time) : '-';
+                    const metaItems = Array.isArray(event.meta) ? event.meta : [];
+                    const filteredMeta = metaItems.filter(meta => {
+                        const key = normalizeEventKey(meta?.key);
+                        return key && !hiddenEventKeys.has(key);
+                    });
+                    const metaHtml = filteredMeta.length > 0
+                        ? `
+                            <div class="alert-event-meta">
+                                ${filteredMeta.map(meta => `
+                                    <div class="alert-event-meta-row">
+                                        <span class="alert-event-meta-key">${meta.key ?? '-'}</span>
+                                        <span class="alert-event-meta-value">${meta.value ?? '-'}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `
+                        : '<div class="muted alert-event-empty">Bez detailů</div>';
+
+                    return `
+                        <div class="alert-event-card">
+                            <div class="alert-event-header">
+                                <span class="alert-event-time">${eventTime}</span>
+                                <span class="alert-event-id">#${event.id ?? '-'}</span>
+                            </div>
+                            ${metaHtml}
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `
+        : '<p>Žádné události</p>';
 
     detail.innerHTML = `
         <h3>Alert #${alert.id}</h3>
@@ -1193,6 +1250,8 @@ function showAlertModal(alert) {
                 </tbody>
             </table>
         ` : '<p>Žádné rozhodnutí</p>'}
+        <h4>Události</h4>
+        ${eventsHtml}
     `;
 
     modal.classList.add('active');

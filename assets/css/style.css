@@ -831,6 +831,65 @@ a {
     font-weight: 600;
 }
 
+.alert-events {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding-right: 6px;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.alert-event-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 8px 10px;
+    background: #f8fafc;
+}
+
+.alert-event-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+}
+
+.alert-event-meta {
+    display: grid;
+    gap: 4px;
+}
+
+.alert-event-meta-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.alert-event-meta-key {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+}
+
+.alert-event-meta-value {
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: right;
+    word-break: break-word;
+}
+
+.alert-event-empty {
+    font-size: 11px;
+    color: var(--muted);
+}
+
 .notification {
     position: fixed;
     top: 20px;
