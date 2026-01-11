@@ -106,6 +106,19 @@ function getAlertLimit() {
     return $limit ?: 100;
 }
 
+function decodeEventSerialized($serialized) {
+    if ($serialized === null || $serialized === '') {
+        return [];
+    }
+
+    $decoded = json_decode($serialized, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    return $decoded;
+}
+
 try {
     $db = Database::getInstance()->getConnection();
 
@@ -179,6 +192,26 @@ try {
         foreach ($alertData['decisions'] as &$decision) {
             $decision['expired'] = strtotime($decision['until']) < time();
         }
+
+        $stmt = $db->prepare("
+            SELECT 
+                e.id,
+                e.time,
+                e.serialized
+            FROM events e
+            WHERE e.alert_events = ?
+            ORDER BY e.time ASC
+        ");
+        $stmt->execute([$id]);
+        $events = $stmt->fetchAll();
+
+        $alertData['events_detail'] = array_map(function ($event) {
+            return [
+                'id' => $event['id'],
+                'time' => $event['time'],
+                'meta' => decodeEventSerialized($event['serialized'])
+            ];
+        }, $events);
 
         jsonResponse($alertData);
     }

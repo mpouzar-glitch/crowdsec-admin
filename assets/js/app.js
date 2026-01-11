@@ -1143,6 +1143,57 @@ function showAlertModal(alert) {
 
     const source = alert.source || {};
     const flag = getCountryFlagHtml(source.cn);
+    const events = Array.isArray(alert.events_detail) && alert.events_detail.length > 0
+        ? alert.events_detail
+        : Array.isArray(alert.events)
+            ? alert.events
+            : [];
+
+    const eventsHtml = events.length > 0
+        ? `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Čas</th>
+                        <th>Podrobnosti</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${events.map(event => {
+                        const eventTime = event.time ? formatDateTime(event.time) : '-';
+                        const metaItems = Array.isArray(event.meta) ? event.meta : [];
+                        const metaHtml = metaItems.length > 0
+                            ? `
+                                <table class="data-table data-table-compact">
+                                    <thead>
+                                        <tr>
+                                            <th>Klíč</th>
+                                            <th>Hodnota</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${metaItems.map(meta => `
+                                            <tr>
+                                                <td>${meta.key ?? '-'}</td>
+                                                <td>${meta.value ?? '-'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            `
+                            : '<span class="muted">Bez detailů</span>';
+
+                        return `
+                            <tr>
+                                <td>${eventTime}</td>
+                                <td>${metaHtml}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `
+        : '<p>Žádné události</p>';
 
     detail.innerHTML = `
         <h3>Alert #${alert.id}</h3>
@@ -1193,6 +1244,8 @@ function showAlertModal(alert) {
                 </tbody>
             </table>
         ` : '<p>Žádné rozhodnutí</p>'}
+        <h4>Události</h4>
+        ${eventsHtml}
     `;
 
     modal.classList.add('active');
