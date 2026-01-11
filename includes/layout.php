@@ -7,6 +7,7 @@ function renderPageStart($pageTitle, $activeMenu, $appTitle = 'CrowdSec Admin') 
     $menuItems = [
         'dashboard' => ['label' => 'Dashboard', 'href' => '/index.php', 'icon' => 'fa-chart-line'],
         'alerts' => ['label' => 'Alerts', 'href' => '/alerts.php', 'icon' => 'fa-bell'],
+        'machines' => ['label' => 'Machines', 'href' => '/machines.php', 'icon' => 'fa-server'],
         'decisions' => ['label' => 'Decisions', 'href' => '/decisions.php', 'icon' => 'fa-gavel'],
         'audit' => ['label' => 'Audit Log', 'href' => '/auditlog.php', 'icon' => 'fa-clipboard-list']
     ];

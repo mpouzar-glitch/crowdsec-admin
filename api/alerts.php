@@ -14,6 +14,45 @@ $env = loadEnv();
 $lookbackMs = parseLookbackToMs($env['LOOKBACK_PERIOD'] ?? '7d');
 $since = date('Y-m-d H:i:s', (time() * 1000 - $lookbackMs) / 1000);
 
+function buildAlertFilters($since) {
+    $conditions = ['a.created_at >= ?'];
+    $params = [$since];
+    $having = '';
+
+    $scenario = strtolower(trim($_GET['scenario'] ?? ''));
+    if ($scenario !== '') {
+        $conditions[] = 'LOWER(a.scenario) LIKE ?';
+        $params[] = '%' . $scenario . '%';
+    }
+
+    $ip = strtolower(trim($_GET['ip'] ?? ''));
+    if ($ip !== '') {
+        $conditions[] = 'LOWER(a.source_ip) LIKE ?';
+        $params[] = '%' . $ip . '%';
+    }
+
+    $machine = strtolower(trim($_GET['machine'] ?? ''));
+    if ($machine !== '') {
+        $conditions[] = 'LOWER(m.machine_id) LIKE ?';
+        $params[] = '%' . $machine . '%';
+    }
+
+    $country = strtolower(trim($_GET['country'] ?? ''));
+    if ($country !== '') {
+        $conditions[] = 'LOWER(a.source_country) LIKE ?';
+        $params[] = '%' . $country . '%';
+    }
+
+    $hasDecisions = filter_var($_GET['has_decisions'] ?? null, FILTER_VALIDATE_BOOLEAN);
+    if ($hasDecisions) {
+        $having = 'HAVING COUNT(d.id) > 0';
+    }
+
+    $whereSql = 'WHERE ' . implode(' AND ', $conditions);
+
+    return [$whereSql, $having, $params];
+}
+
 try {
     $db = Database::getInstance()->getConnection();
 
@@ -22,8 +61,20 @@ try {
 
     // GET /api/alerts?summary=1 - total count
     if ($method === 'GET' && isset($_GET['summary'])) {
-        $stmt = $db->prepare("SELECT COUNT(*) as count FROM alerts");
-        $stmt->execute();
+        [$whereSql, $havingSql, $params] = buildAlertFilters($since);
+        $stmt = $db->prepare("
+            SELECT COUNT(*) as count
+            FROM (
+                SELECT a.id
+                FROM alerts a
+                LEFT JOIN decisions d ON d.alert_decisions = a.id
+                LEFT JOIN machines m ON m.id = a.machine_alerts
+                {$whereSql}
+                GROUP BY a.id
+                {$havingSql}
+            ) as filtered_alerts
+        ");
+        $stmt->execute($params);
         $total = $stmt->fetchColumn();
 
         jsonResponse(['total_alerts' => (int) $total]);
@@ -59,6 +110,7 @@ try {
 
     // GET /api/alerts - list
     elseif ($method === 'GET' && strpos($uri, '/api/alerts/') === false) {
+        [$whereSql, $havingSql, $params] = buildAlertFilters($since);
         $stmt = $db->prepare("
             SELECT 
                 a.id,
@@ -77,13 +129,14 @@ try {
             FROM alerts a
             LEFT JOIN decisions d ON d.alert_decisions = a.id
             LEFT JOIN machines m ON m.id = a.machine_alerts
-            WHERE a.created_at >= ?
+            {$whereSql}
             GROUP BY a.id
+            {$havingSql}
             ORDER BY a.created_at DESC
             LIMIT 100
         ");
 
-        $stmt->execute([$since]);
+        $stmt->execute($params);
         $alerts = $stmt->fetchAll();
 
         // Enrich with decisions

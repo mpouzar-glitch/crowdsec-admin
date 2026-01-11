@@ -4,6 +4,7 @@ var API_BASE = '/api';
 // Cache for data
 let alertsData = [];
 let decisionsData = [];
+let machinesData = [];
 let alertSortState = { key: 'created_at', direction: 'desc' };
 let decisionSortState = { key: 'created_at', direction: 'desc' };
 let worldMap = null;
@@ -174,6 +175,21 @@ function toggleDashboardFilter(set, value) {
     }
 }
 
+function formatDashboardFilterValues(values, formatter) {
+    const formatted = values.map(value => formatter(value)).filter(Boolean);
+    if (formatted.length === 0) return '';
+    const maxItems = 3;
+    const visible = formatted.slice(0, maxItems);
+    const remaining = formatted.length - visible.length;
+    return remaining > 0 ? `${visible.join(', ')} +${remaining}` : visible.join(', ');
+}
+
+function formatDashboardHourFilter(hourKey) {
+    const date = new Date(Number(hourKey));
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+}
+
 function clearDashboardFilters() {
     Object.values(dashboardState.filters).forEach(set => set.clear());
     renderDashboard();
@@ -186,10 +202,18 @@ function updateDashboardFilterStatus() {
 
     const parts = [];
     const { scenarios, countries, hosts, hours } = dashboardState.filters;
-    if (scenarios.size) parts.push(`Scénáře (${scenarios.size})`);
-    if (countries.size) parts.push(`Země (${countries.size})`);
-    if (hosts.size) parts.push(`Hosté (${hosts.size})`);
-    if (hours.size) parts.push(`Hodiny (${hours.size})`);
+    if (scenarios.size) {
+        parts.push(`Scénáře: ${formatDashboardFilterValues(Array.from(scenarios), scenario => scenario.split('/').pop())}`);
+    }
+    if (countries.size) {
+        parts.push(`Země: ${formatDashboardFilterValues(Array.from(countries), country => country)}`);
+    }
+    if (hosts.size) {
+        parts.push(`Hosté: ${formatDashboardFilterValues(Array.from(hosts), host => host)}`);
+    }
+    if (hours.size) {
+        parts.push(`Hodiny: ${formatDashboardFilterValues(Array.from(hours), formatDashboardHourFilter)}`);
+    }
 
     if (parts.length === 0) {
         status.textContent = 'Žádný filtr';
@@ -337,10 +361,18 @@ function updateDashboardFilterStatus() {
 
     const parts = [];
     const { scenarios, countries, hosts, hours } = dashboardState.filters;
-    if (scenarios.size) parts.push(`Scénáře (${scenarios.size})`);
-    if (countries.size) parts.push(`Země (${countries.size})`);
-    if (hosts.size) parts.push(`Hosté (${hosts.size})`);
-    if (hours.size) parts.push(`Hodiny (${hours.size})`);
+    if (scenarios.size) {
+        parts.push(`Scénáře: ${formatDashboardFilterValues(Array.from(scenarios), scenario => scenario.split('/').pop())}`);
+    }
+    if (countries.size) {
+        parts.push(`Země: ${formatDashboardFilterValues(Array.from(countries), country => country)}`);
+    }
+    if (hosts.size) {
+        parts.push(`Hosté: ${formatDashboardFilterValues(Array.from(hosts), host => host)}`);
+    }
+    if (hours.size) {
+        parts.push(`Hodiny: ${formatDashboardFilterValues(Array.from(hours), formatDashboardHourFilter)}`);
+    }
 
     if (parts.length === 0) {
         status.textContent = 'Žádný filtr';
@@ -443,6 +475,21 @@ function buildWorldMapDatasetFromAlerts(alerts, mode) {
         if (mode === 'decisions' && increment === 0) return;
         values[key] = (values[key] || 0) + increment;
         if (values[key] > max) max = values[key];
+    });
+    return { values, max };
+}
+
+function buildMapDataset(rows) {
+    const values = {};
+    let max = 0;
+    (rows || []).forEach(row => {
+        const country = row.country;
+        if (!country) return;
+        const key = country.toUpperCase();
+        const count = Number(row.count || 0);
+        if (Number.isNaN(count) || count === 0) return;
+        values[key] = count;
+        if (count > max) max = count;
     });
     return { values, max };
 }
@@ -860,11 +907,25 @@ function renderDashboard() {
 }
 
 // Alerts functions
+let alertFilterRefreshTimer = null;
+
+function queueAlertFilterRefresh() {
+    if (alertFilterRefreshTimer) {
+        clearTimeout(alertFilterRefreshTimer);
+    }
+    alertFilterRefreshTimer = setTimeout(() => {
+        loadAlerts();
+    }, 300);
+}
+
 async function loadAlerts() {
     try {
+        const filters = getAlertFilterParams();
+        const params = buildAlertQueryParams(filters);
+        const query = params.toString();
         const [alerts, summary] = await Promise.all([
-            apiGet('/alerts.php'),
-            apiGet('/alerts.php?summary=1')
+            apiGet(`/alerts.php${query ? `?${query}` : ''}`),
+            apiGet(`/alerts.php?summary=1${query ? `&${query}` : ''}`)
         ]);
         alertsData = alerts;
         const totalCount = document.getElementById('alertsTotalCount');
@@ -876,6 +937,26 @@ async function loadAlerts() {
     } catch (error) {
         console.error('Failed to load alerts:', error);
     }
+}
+
+function buildAlertQueryParams(filters) {
+    const params = new URLSearchParams();
+    if (filters.scenario) params.set('scenario', filters.scenario);
+    if (filters.ip) params.set('ip', filters.ip);
+    if (filters.machine) params.set('machine', filters.machine);
+    if (filters.country) params.set('country', filters.country);
+    if (filters.hasDecisionsOnly) params.set('has_decisions', '1');
+    return params;
+}
+
+function getAlertFilterParams() {
+    return {
+        scenario: document.getElementById('alertFilterScenario')?.value?.trim() || '',
+        ip: document.getElementById('alertFilterIp')?.value?.trim() || '',
+        machine: document.getElementById('alertFilterMachine')?.value?.trim() || '',
+        country: document.getElementById('alertFilterCountry')?.value?.trim() || '',
+        hasDecisionsOnly: document.getElementById('alertFilterHasDecisions')?.checked || false
+    };
 }
 
 function getRepeatedAlertIds(alerts) {
@@ -1123,7 +1204,7 @@ function clearAlertFilters() {
     if (repeatedCheckbox) repeatedCheckbox.checked = false;
     const decisionCheckbox = document.getElementById('alertFilterHasDecisions');
     if (decisionCheckbox) decisionCheckbox.checked = false;
-    renderAlerts();
+    loadAlerts();
 }
 
 // Decisions functions
@@ -1283,6 +1364,57 @@ function clearDecisionFilters() {
     renderDecisions();
 }
 
+// Machines functions
+async function loadMachines() {
+    try {
+        machinesData = await apiGet('/machines.php');
+        renderMachines();
+    } catch (error) {
+        console.error('Failed to load machines:', error);
+    }
+}
+
+function getMachineStatusBadge(machine) {
+    const statusText = (machine.status || '').trim();
+    let label = statusText;
+    let badgeClass = 'badge-muted';
+    const heartbeat = machine.last_heartbeat ? new Date(machine.last_heartbeat) : null;
+    const heartbeatValid = heartbeat && !Number.isNaN(heartbeat.getTime());
+    const isActive = heartbeatValid && (Date.now() - heartbeat.getTime()) <= 10 * 60 * 1000;
+
+    if (!label) {
+        label = isActive ? 'Aktivní' : 'Neaktivní';
+    }
+    if (isActive || label.toLowerCase() === 'active') {
+        badgeClass = 'badge-active';
+    }
+
+    const validationLabel = machine.is_validated ? 'Validováno' : 'Neověřeno';
+    return `<span class="badge ${badgeClass}">${label}</span> <span class="muted">${validationLabel}</span>`;
+}
+
+function renderMachines() {
+    const tbody = document.querySelector('#machinesTable tbody');
+    if (!tbody) return;
+
+    if (!machinesData.length) {
+        tbody.innerHTML = '<tr><td class="table-empty" colspan="7">Žádná data.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = machinesData.map(machine => `
+        <tr>
+            <td>${machine.machine_id || '-'}</td>
+            <td>${machine.ip_address || '-'}</td>
+            <td>${getMachineStatusBadge(machine)}</td>
+            <td>${formatDateTime(machine.last_heartbeat)}</td>
+            <td>${formatDateTime(machine.last_push)}</td>
+            <td>${machine.alerts_count ?? 0}</td>
+            <td>${machine.decisions_count ?? 0}</td>
+        </tr>
+    `).join('');
+}
+
 function showAddDecisionModal() {
     const modal = document.getElementById('addDecisionModal');
     if (!modal) return;
@@ -1337,7 +1469,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-filter-key]').forEach(input => {
         input.addEventListener('input', () => {
             if (input.id.startsWith('alert')) {
-                renderAlerts();
+                queueAlertFilterRefresh();
             } else {
                 renderDecisions();
             }
