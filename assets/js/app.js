@@ -10,6 +10,7 @@ let decisionSortState = { key: 'created_at', direction: 'desc' };
 let worldMap = null;
 let worldMapMode = 'alerts';
 let alertFilterOptions = null;
+let alertFilterSessionTimer = null;
 let worldMapData = {
     alerts: { values: {}, max: 0 },
     decisions: { values: {}, max: 0 }
@@ -924,6 +925,50 @@ function queueAlertFilterRefresh() {
     }, 300);
 }
 
+function queueAlertFilterSessionSave() {
+    if (alertFilterSessionTimer) {
+        clearTimeout(alertFilterSessionTimer);
+    }
+    alertFilterSessionTimer = setTimeout(() => {
+        saveAlertFiltersToSession();
+    }, 300);
+}
+
+function getAlertFilterSessionPayload() {
+    return {
+        scenario: document.getElementById('alertFilterScenario')?.value?.trim() || '',
+        ip: document.getElementById('alertFilterIp')?.value?.trim() || '',
+        machine: document.getElementById('alertFilterMachine')?.value?.trim() || '',
+        country: document.getElementById('alertFilterCountry')?.value?.trim() || '',
+        repeatedOnly: document.getElementById('alertFilterRepeated')?.checked || false,
+        hasDecisionsOnly: document.getElementById('alertFilterHasDecisions')?.checked || false
+    };
+}
+
+async function saveAlertFiltersToSession() {
+    try {
+        await apiPost('/alerts.php?filters=1', getAlertFilterSessionPayload());
+    } catch (error) {
+        console.error('Failed to save alert filters:', error);
+    }
+}
+
+function applyAlertFilterDefaults(defaults) {
+    if (!defaults) return;
+    const scenarioInput = document.getElementById('alertFilterScenario');
+    if (scenarioInput && defaults.scenario !== undefined) scenarioInput.value = defaults.scenario;
+    const ipInput = document.getElementById('alertFilterIp');
+    if (ipInput && defaults.ip !== undefined) ipInput.value = defaults.ip;
+    const machineSelect = document.getElementById('alertFilterMachine');
+    if (machineSelect && defaults.machine !== undefined) machineSelect.value = defaults.machine;
+    const countryInput = document.getElementById('alertFilterCountry');
+    if (countryInput && defaults.country !== undefined) countryInput.value = defaults.country;
+    const repeatedCheckbox = document.getElementById('alertFilterRepeated');
+    if (repeatedCheckbox && defaults.repeatedOnly !== undefined) repeatedCheckbox.checked = Boolean(defaults.repeatedOnly);
+    const decisionCheckbox = document.getElementById('alertFilterHasDecisions');
+    if (decisionCheckbox && defaults.hasDecisionsOnly !== undefined) decisionCheckbox.checked = Boolean(defaults.hasDecisionsOnly);
+}
+
 async function loadAlerts() {
     try {
         const filters = getAlertFilterParams();
@@ -1054,7 +1099,7 @@ function renderAlerts() {
                 <td>${decisionsCount}</td>
                 <td>
                     <button class="btn btn-small" onclick="viewAlert(${alert.id})">Detail</button>
-                    <button class="btn btn-small btn-danger" onclick="deleteAlert(${alert.id})">Smazat</button>
+                    <button class="btn btn-small btn-danger" onclick="showLongTermBanModal('${alert.source_ip || ''}')">Ban</button>
                 </td>
             </tr>
         `;
@@ -1134,18 +1179,6 @@ function showAlertModal(alert) {
     modal.classList.add('active');
 }
 
-async function deleteAlert(id) {
-    if (!confirm('Opravdu chcete smazat tento alert?')) return;
-
-    try {
-        await apiDelete(`/alerts.php?id=${id}`);
-        showNotification('Alert byl úspěšně smazán', 'success');
-        loadAlerts();
-    } catch (error) {
-        console.error('Failed to delete alert:', error);
-    }
-}
-
 function refreshAlerts() {
     loadAlerts();
     showNotification('Data obnovena', 'success');
@@ -1173,9 +1206,13 @@ function updateAlertFilterOptions() {
     const machineOptions = uniqueValues(machines);
     const machineSelect = document.getElementById('alertFilterMachine');
     if (machineSelect) {
+        const currentValue = machineSelect.value;
         machineSelect.innerHTML = '<option value="">Všechny machine</option>' + machineOptions.map(option => `
             <option value="${option}">${option}</option>
         `).join('');
+        if (currentValue) {
+            machineSelect.value = currentValue;
+        }
     }
 }
 
@@ -1188,6 +1225,7 @@ function clearAlertFilters() {
     if (repeatedCheckbox) repeatedCheckbox.checked = false;
     const decisionCheckbox = document.getElementById('alertFilterHasDecisions');
     if (decisionCheckbox) decisionCheckbox.checked = false;
+    queueAlertFilterSessionSave();
     loadAlerts();
 }
 
@@ -1459,6 +1497,7 @@ window.addEventListener('DOMContentLoaded', () => {
         input.addEventListener('input', () => {
             if (input.id.startsWith('alert')) {
                 queueAlertFilterRefresh();
+                queueAlertFilterSessionSave();
             } else {
                 renderDecisions();
             }
@@ -1539,7 +1578,11 @@ window.addEventListener('DOMContentLoaded', () => {
                 showNotification('Dlouhodobý ban byl úspěšně přidán', 'success');
                 document.getElementById('longTermBanModal').classList.remove('active');
                 longTermBanForm.reset();
-                loadDashboard();
+                if (document.getElementById('alertsTable')) {
+                    loadAlerts();
+                } else {
+                    loadDashboard();
+                }
             } catch (error) {
                 console.error('Failed to add long-term decision:', error);
             }

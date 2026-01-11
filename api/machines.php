@@ -16,7 +16,6 @@ try {
             m.id,
             m.machine_id,
             m.ip_address,
-            m.status,
             m.last_heartbeat,
             m.last_push,
             m.is_validated,
@@ -31,7 +30,17 @@ try {
     ");
     $stmt->execute();
 
-    jsonResponse($stmt->fetchAll());
+    $machines = $stmt->fetchAll();
+    $now = time();
+
+    foreach ($machines as &$machine) {
+        $heartbeat = $machine['last_heartbeat'] ? strtotime($machine['last_heartbeat']) : null;
+        $isValidated = filter_var($machine['is_validated'], FILTER_VALIDATE_BOOLEAN);
+        $isOnline = $isValidated && $heartbeat && ($now - $heartbeat <= 120);
+        $machine['status'] = $isOnline ? 'Online' : 'Offline';
+    }
+
+    jsonResponse($machines);
 } catch (Exception $e) {
     error_log("Machines API Error: " . $e->getMessage());
     jsonResponse(['error' => $e->getMessage()], 500);

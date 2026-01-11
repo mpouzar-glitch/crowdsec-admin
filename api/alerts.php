@@ -112,6 +112,24 @@ try {
     $method = $_SERVER['REQUEST_METHOD'];
     $uri = $_SERVER['REQUEST_URI'];
 
+    if ($method === 'POST' && isset($_GET['filters'])) {
+        $payload = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($payload)) {
+            jsonResponse(['error' => 'Invalid payload'], 400);
+        }
+
+        $_SESSION['alert_filters'] = [
+            'scenario' => trim((string) ($payload['scenario'] ?? '')),
+            'ip' => trim((string) ($payload['ip'] ?? '')),
+            'machine' => trim((string) ($payload['machine'] ?? '')),
+            'country' => trim((string) ($payload['country'] ?? '')),
+            'repeatedOnly' => (bool) ($payload['repeatedOnly'] ?? false),
+            'hasDecisionsOnly' => (bool) ($payload['hasDecisionsOnly'] ?? false)
+        ];
+
+        jsonResponse(['status' => 'ok']);
+    }
+
     if ($method === 'GET' && isset($_GET['filters'])) {
         jsonResponse(getAlertFilterOptions($db));
     }
