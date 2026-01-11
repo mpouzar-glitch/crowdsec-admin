@@ -244,12 +244,22 @@ class CrowdSecAPI {
     
     public function addDecision($ip, $type = 'ban', $duration = '4h', $reason = 'manual') {
         $url = $this->baseUrl . '/v1/alerts';
+        $now = date('c');
         
         $data = [[
-            'created_at' => date('c'),
+            'created_at' => $now,
             'machine_id' => $this->username,
             'scenario' => $reason,
+            'scenario_hash' => $reason,
+            'scenario_version' => '1.0',
             'message' => "Manual ban from Web UI",
+            'start_at' => $now,
+            'stop_at' => $now,
+            'capacity' => 1,
+            'events' => [],
+            'events_count' => 0,
+            'leakspeed' => '0s',
+            'simulated' => false,
             'source' => [
                 'scope' => 'Ip',
                 'value' => $ip
@@ -257,6 +267,8 @@ class CrowdSecAPI {
             'decisions' => [[
                 'duration' => $duration,
                 'type' => $type,
+                'origin' => 'manual',
+                'scenario' => $reason,
                 'scope' => 'Ip',
                 'value' => $ip
             ]]
