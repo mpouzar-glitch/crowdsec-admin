@@ -169,6 +169,24 @@ try {
 
         $stmt = $db->prepare("
             SELECT 
+                a.source_as_name,
+                a.source_as_number,
+                a.source_latitude,
+                a.source_longitude
+            FROM alerts a
+            WHERE a.id = ?
+        ");
+        $stmt->execute([$id]);
+        $sourceMeta = $stmt->fetch();
+        if ($sourceMeta) {
+            $alertData['source_as_name'] = $sourceMeta['source_as_name'] ?? null;
+            $alertData['source_as_number'] = $sourceMeta['source_as_number'] ?? null;
+            $alertData['source_latitude'] = $sourceMeta['source_latitude'] ?? null;
+            $alertData['source_longitude'] = $sourceMeta['source_longitude'] ?? null;
+        }
+
+        $stmt = $db->prepare("
+            SELECT 
                 d.id,
                 d.type,
                 d.value,

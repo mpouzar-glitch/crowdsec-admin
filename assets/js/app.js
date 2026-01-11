@@ -1186,6 +1186,17 @@ function showAlertModal(alert) {
 
     const source = alert.source || {};
     const flag = getCountryFlagHtml(source.cn);
+    const latitude = alert.source_latitude;
+    const longitude = alert.source_longitude;
+    let mapLink = '-';
+    if (latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined && latitude !== '' && longitude !== '') {
+        const lat = Number(latitude);
+        const lon = Number(longitude);
+        if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
+            const mapUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=12/${lat}/${lon}`;
+            mapLink = `<a href="${mapUrl}" target="_blank" rel="noopener">Zobrazit mapu</a>`;
+        }
+    }
     const events = Array.isArray(alert.events_detail) && alert.events_detail.length > 0
         ? alert.events_detail
         : Array.isArray(alert.events)
@@ -1258,6 +1269,18 @@ function showAlertModal(alert) {
             <div class="detail-item">
                 <label>Země</label>
                 <div class="value">${flag} ${source.cn || '-'}</div>
+            </div>
+            <div class="detail-item">
+                <label>ASN</label>
+                <div class="value">${alert.source_as_number || '-'}</div>
+            </div>
+            <div class="detail-item">
+                <label>AS název</label>
+                <div class="value">${alert.source_as_name || '-'}</div>
+            </div>
+            <div class="detail-item">
+                <label>Mapa</label>
+                <div class="value">${mapLink}</div>
             </div>
             <div class="detail-item">
                 <label>Čas vytvoření</label>
