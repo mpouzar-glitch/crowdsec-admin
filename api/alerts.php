@@ -18,7 +18,6 @@ $repeatedWindowSeconds = 5 * 60;
 function buildAlertFilters($since) {
     $conditions = ['a.created_at >= ?'];
     $params = [$since];
-    $having = '';
 
     $scenario = strtolower(trim($_GET['scenario'] ?? ''));
     if ($scenario !== '') {
@@ -44,14 +43,9 @@ function buildAlertFilters($since) {
         $params[] = '%' . $country . '%';
     }
 
-    $hasDecisions = filter_var($_GET['has_decisions'] ?? null, FILTER_VALIDATE_BOOLEAN);
-    if ($hasDecisions) {
-        $having = 'HAVING COUNT(d.id) > 0';
-    }
-
     $whereSql = 'WHERE ' . implode(' AND ', $conditions);
 
-    return [$whereSql, $having, $params];
+    return [$whereSql, $params];
 }
 
 function getAlertFilterOptions($db) {
@@ -136,8 +130,7 @@ try {
             'ip' => trim((string) ($payload['ip'] ?? '')),
             'machine' => trim((string) ($payload['machine'] ?? '')),
             'country' => trim((string) ($payload['country'] ?? '')),
-            'repeatedOnly' => (bool) ($payload['repeatedOnly'] ?? false),
-            'hasDecisionsOnly' => (bool) ($payload['hasDecisionsOnly'] ?? false)
+            'repeatedOnly' => (bool) ($payload['repeatedOnly'] ?? false)
         ];
 
         jsonResponse(['status' => 'ok']);
@@ -149,7 +142,7 @@ try {
 
     // GET /api/alerts?summary=1 - total count
     elseif ($method === 'GET' && isset($_GET['summary'])) {
-        [$whereSql, $havingSql, $params] = buildAlertFilters($since);
+        [$whereSql, $params] = buildAlertFilters($since);
         $stmt = $db->prepare("
             SELECT COUNT(*) as count
             FROM (
@@ -159,7 +152,6 @@ try {
                 LEFT JOIN machines m ON m.id = a.machine_alerts
                 {$whereSql}
                 GROUP BY a.id
-                {$havingSql}
             ) as filtered_alerts
         ");
         $stmt->execute($params);
@@ -218,7 +210,7 @@ try {
 
     // GET /api/alerts - list
     elseif ($method === 'GET' && strpos($uri, '/api/alerts/') === false) {
-        [$whereSql, $havingSql, $params] = buildAlertFilters($since);
+        [$whereSql, $params] = buildAlertFilters($since);
         $limit = getAlertLimit();
         $limitSql = $limit ? 'LIMIT ' . (int) $limit : '';
         $stmt = $db->prepare("
@@ -226,6 +218,8 @@ try {
                 a.id,
                 a.uuid,
                 a.created_at,
+                a.started_at,
+                a.stopped_at,
                 a.scenario,
                 a.message,
                 a.events_count,
@@ -252,7 +246,6 @@ try {
                 AND repeated.source_ip = a.source_ip
             {$whereSql}
             GROUP BY a.id
-            {$havingSql}
             ORDER BY a.created_at DESC
             {$limitSql}
         ");

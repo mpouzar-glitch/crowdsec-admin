@@ -959,8 +959,7 @@ function getAlertFilterSessionPayload() {
         ip: document.getElementById('alertFilterIp')?.value?.trim() || '',
         machine: document.getElementById('alertFilterMachine')?.value?.trim() || '',
         country: document.getElementById('alertFilterCountry')?.value?.trim() || '',
-        repeatedOnly: document.getElementById('alertFilterRepeated')?.checked || false,
-        hasDecisionsOnly: document.getElementById('alertFilterHasDecisions')?.checked || false
+        repeatedOnly: document.getElementById('alertFilterRepeated')?.checked || false
     };
 }
 
@@ -984,8 +983,6 @@ function applyAlertFilterDefaults(defaults) {
     if (countryInput && defaults.country !== undefined) countryInput.value = defaults.country;
     const repeatedCheckbox = document.getElementById('alertFilterRepeated');
     if (repeatedCheckbox && defaults.repeatedOnly !== undefined) repeatedCheckbox.checked = Boolean(defaults.repeatedOnly);
-    const decisionCheckbox = document.getElementById('alertFilterHasDecisions');
-    if (decisionCheckbox && defaults.hasDecisionsOnly !== undefined) decisionCheckbox.checked = Boolean(defaults.hasDecisionsOnly);
 }
 
 async function loadAlerts() {
@@ -1020,7 +1017,6 @@ function buildAlertQueryParams(filters) {
     if (filters.ip) params.set('ip', filters.ip);
     if (filters.machine) params.set('machine', filters.machine);
     if (filters.country) params.set('country', filters.country);
-    if (filters.hasDecisionsOnly) params.set('has_decisions', '1');
     return params;
 }
 
@@ -1029,8 +1025,7 @@ function getAlertFilterParams() {
         scenario: normalizeString(document.getElementById('alertFilterScenario')?.value),
         ip: normalizeString(document.getElementById('alertFilterIp')?.value),
         machine: document.getElementById('alertFilterMachine')?.value?.trim() || '',
-        country: document.getElementById('alertFilterCountry')?.value?.trim() || '',
-        hasDecisionsOnly: document.getElementById('alertFilterHasDecisions')?.checked || false
+        country: document.getElementById('alertFilterCountry')?.value?.trim() || ''
     };
 }
 
@@ -1045,16 +1040,13 @@ function renderAlerts() {
         const ipValue = normalizeString(alert.source_ip);
         const machineValue = normalizeString(alert.machine_id);
         const countryValue = normalizeString(alert.source_country);
-        const decisionsCount = alert.decisions ? alert.decisions.length : 0;
         const isRepeated = alert.is_repeated === true;
-        const hasDecisions = decisionsCount > 0;
 
         return (
             matchesFilter(scenarioValue, filters.scenario) &&
             matchesFilter(ipValue, filters.ip) &&
             matchesFilter(machineValue, filters.machine) &&
             matchesFilter(countryValue, filters.country) &&
-            (!filters.hasDecisionsOnly || hasDecisions) &&
             (!filters.repeatedOnly || isRepeated)
         );
     });
@@ -1076,6 +1068,14 @@ function renderAlerts() {
                 aValue = a.machine_id || '';
                 bValue = b.machine_id || '';
                 break;
+            case 'started_at':
+                aValue = new Date(a.started_at).getTime() || 0;
+                bValue = new Date(b.started_at).getTime() || 0;
+                break;
+            case 'stopped_at':
+                aValue = new Date(a.stopped_at).getTime() || 0;
+                bValue = new Date(b.stopped_at).getTime() || 0;
+                break;
             case 'source_ip':
                 aValue = a.source_ip || '';
                 bValue = b.source_ip || '';
@@ -1088,10 +1088,6 @@ function renderAlerts() {
                 aValue = Number(a.events_count || 0);
                 bValue = Number(b.events_count || 0);
                 break;
-            case 'decisions_count':
-                aValue = a.decisions ? a.decisions.length : Number(a.decisions_count || 0);
-                bValue = b.decisions ? b.decisions.length : Number(b.decisions_count || 0);
-                break;
             default:
                 aValue = a.scenario || '';
                 bValue = b.scenario || '';
@@ -1100,25 +1096,40 @@ function renderAlerts() {
     });
 
     tbody.innerHTML = sorted.map(alert => {
-        const decisionsCount = alert.decisions ? alert.decisions.length : 0;
         const flag = getCountryFlagHtml(alert.source_country);
         const scenarioLabel = alert.scenario?.split('/').pop() || '';
         const machineLabel = alert.machine_id || '-';
         const isRepeated = alert.is_repeated === true;
         const repeatedBadge = isRepeated ? '<span class="badge badge-repeated">Opakovaný</span>' : '';
+        const activeDecisions = (alert.decisions || []).filter(decision => !decision.expired);
+        const hasActiveDecision = activeDecisions.length > 0;
+        const banLabel = hasActiveDecision ? 'Unban' : 'Ban';
+        const banIcon = hasActiveDecision ? 'fa-unlock' : 'fa-ban';
+        const banClass = hasActiveDecision ? 'icon-btn-warning' : 'icon-btn-danger';
+        const ipDisabled = !alert.source_ip;
 
         return `
             <tr class="${isRepeated ? 'alert-repeated' : ''}">
                 <td>${formatDateTime(alert.created_at)}</td>
+                <td>${alert.started_at ? formatDateTime(alert.started_at) : '-'}</td>
+                <td>${alert.stopped_at ? formatDateTime(alert.stopped_at) : '-'}</td>
                 <td class="table-filter-link" title="${alert.scenario}" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterScenario" data-filter-value="${alert.scenario}">${scenarioLabel} ${repeatedBadge}</td>
                 <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterMachine" data-filter-value="${alert.machine_id || ''}">${machineLabel}</td>
                 <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterIp" data-filter-value="${alert.source_ip || ''}">${alert.source_ip || '-'}</td>
                 <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterCountry" data-filter-value="${alert.source_country || ''}">${flag} ${alert.source_country || '-'}</td>
                 <td>${alert.events_count || 0}</td>
-                <td>${decisionsCount}</td>
                 <td>
-                    <button class="btn btn-small" onclick="viewAlert(${alert.id})">Detail</button>
-                    <button class="btn btn-small btn-danger" onclick="showLongTermBanModal('${alert.source_ip || ''}')">Ban</button>
+                    <div class="table-actions">
+                        <button class="icon-btn icon-btn-primary" onclick="viewAlert(${alert.id})" aria-label="Detail" title="Detail">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                        <button class="icon-btn ${banClass}" onclick="toggleAlertDecision(${alert.id})" ${ipDisabled ? 'disabled' : ''} aria-label="${banLabel}" title="${banLabel}">
+                            <i class="fa-solid ${banIcon}"></i>
+                        </button>
+                        <button class="icon-btn icon-btn-success" onclick="addAlertIpToWhitelist('${alert.source_ip || ''}')" ${ipDisabled ? 'disabled' : ''} aria-label="Whitelist" title="Whitelist">
+                            <i class="fa-solid fa-shield"></i>
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -1156,7 +1167,11 @@ function showAlertModal(alert) {
         'country',
         'sourcecountry',
         'stat',
-        'cn'
+        'cn',
+        'sourceip',
+        'sourcerange',
+        'asnnumber',
+        'asnorg'
     ]);
 
     const normalizeEventKey = (key) => (key ?? '')
@@ -1180,7 +1195,7 @@ function showAlertModal(alert) {
                                 ${filteredMeta.map(meta => `
                                     <div class="alert-event-meta-row">
                                         <span class="alert-event-meta-key">${meta.key ?? '-'}</span>
-                                        <span class="alert-event-meta-value">${meta.value ?? '-'}</span>
+                                        <span class="alert-event-meta-value ${normalizeEventKey(meta?.key) === 'logtype' ? 'alert-event-pill' : ''}">${meta.value ?? '-'}</span>
                                     </div>
                                 `).join('')}
                             </div>
@@ -1209,16 +1224,8 @@ function showAlertModal(alert) {
                 <div class="value">${alert.scenario}</div>
             </div>
             <div class="detail-item">
-                <label>IP adresa</label>
-                <div class="value">${source.ip || '-'}</div>
-            </div>
-            <div class="detail-item">
                 <label>Země</label>
                 <div class="value">${flag} ${source.cn || '-'}</div>
-            </div>
-            <div class="detail-item">
-                <label>AS</label>
-                <div class="value">${source.as_name || '-'}</div>
             </div>
             <div class="detail-item">
                 <label>Čas vytvoření</label>
@@ -1268,8 +1275,7 @@ function getAlertFilters() {
         ip: normalizeString(document.getElementById('alertFilterIp')?.value),
         machine: normalizeString(document.getElementById('alertFilterMachine')?.value),
         country: normalizeString(document.getElementById('alertFilterCountry')?.value),
-        repeatedOnly: document.getElementById('alertFilterRepeated')?.checked || false,
-        hasDecisionsOnly: document.getElementById('alertFilterHasDecisions')?.checked || false
+        repeatedOnly: document.getElementById('alertFilterRepeated')?.checked || false
     };
 }
 
@@ -1301,10 +1307,48 @@ function clearAlertFilters() {
     });
     const repeatedCheckbox = document.getElementById('alertFilterRepeated');
     if (repeatedCheckbox) repeatedCheckbox.checked = false;
-    const decisionCheckbox = document.getElementById('alertFilterHasDecisions');
-    if (decisionCheckbox) decisionCheckbox.checked = false;
     queueAlertFilterSessionSave();
     loadAlerts();
+}
+
+function findAlertById(alertId) {
+    return alertsData.find(alert => Number(alert.id) === Number(alertId));
+}
+
+async function toggleAlertDecision(alertId) {
+    const alert = findAlertById(alertId);
+    if (!alert) return;
+
+    const ip = alert.source_ip || '';
+    const activeDecisions = (alert.decisions || []).filter(decision => !decision.expired);
+
+    if (activeDecisions.length > 0) {
+        if (!confirm(`Opravdu chcete zrušit rozhodnutí pro IP ${ip}?`)) return;
+        try {
+            await Promise.all(activeDecisions.map(decision => apiDelete(`/decisions.php?id=${decision.id}`)));
+            showNotification('Rozhodnutí bylo zrušeno', 'success');
+            loadAlerts();
+        } catch (error) {
+            console.error('Failed to delete decisions:', error);
+            showNotification('Nepodařilo se zrušit rozhodnutí', 'error');
+        }
+    } else {
+        showLongTermBanModal(ip);
+    }
+}
+
+async function addAlertIpToWhitelist(ip) {
+    if (!ip) return;
+    if (!confirm(`Přidat IP ${ip} do whitelistu?`)) return;
+
+    try {
+        await apiPost('/whitelist.php', { cidr: ip, reason: 'manual' });
+        showNotification('IP byla přidána do whitelistu', 'success');
+    } catch (error) {
+        console.error('Failed to add IP to whitelist:', error);
+        const message = error?.message || 'Nepodařilo se přidat IP do whitelistu';
+        showNotification(message, 'error');
+    }
 }
 
 // Decisions functions

@@ -12,8 +12,7 @@ $alertFilterDefaults = [
     'ip' => $alertFilters['ip'] ?? '',
     'machine' => $alertFilters['machine'] ?? '',
     'country' => $alertFilters['country'] ?? '',
-    'repeatedOnly' => $alertFilters['repeatedOnly'] ?? false,
-    'hasDecisionsOnly' => $alertFilters['hasDecisionsOnly'] ?? false
+    'repeatedOnly' => $alertFilters['repeatedOnly'] ?? false
 ];
 
 renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
@@ -56,12 +55,6 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                 <i class="fa-solid fa-repeat"></i> Pouze opakující se alerty
             </label>
         </div>
-        <div class="filter-group checkbox">
-            <label for="alertFilterHasDecisions">
-                <input type="checkbox" id="alertFilterHasDecisions" data-filter-key="has_decisions" <?php echo $alertFilterDefaults['hasDecisionsOnly'] ? 'checked' : ''; ?>>
-                <i class="fa-solid fa-gavel"></i> Pouze s rozhodnutím
-            </label>
-        </div>
         <div class="filter-actions">
             <button class="btn btn-ghost" type="button" onclick="clearAlertFilters()">Vyčistit filtry</button>
         </div>
@@ -73,12 +66,13 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                 <thead>
                     <tr>
                         <th data-sort-key="created_at">Čas <span class="sort-indicator"></span></th>
+                        <th data-sort-key="started_at">Start <span class="sort-indicator"></span></th>
+                        <th data-sort-key="stopped_at">Stop <span class="sort-indicator"></span></th>
                         <th data-sort-key="scenario">Scénář <span class="sort-indicator"></span></th>
                         <th data-sort-key="machine">Machine <span class="sort-indicator"></span></th>
                         <th data-sort-key="source_ip">IP adresa <span class="sort-indicator"></span></th>
                         <th data-sort-key="source_country">Země <span class="sort-indicator"></span></th>
                         <th data-sort-key="events_count">Počet událostí <span class="sort-indicator"></span></th>
-                        <th data-sort-key="decisions_count">Rozhodnutí <span class="sort-indicator"></span></th>
                         <th>Akce</th>
                     </tr>
                 </thead>

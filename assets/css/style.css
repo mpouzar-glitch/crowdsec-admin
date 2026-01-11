@@ -466,6 +466,50 @@ a {
     background: var(--primary);
 }
 
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    padding: 4px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.icon-btn:hover {
+    background: rgba(148, 163, 184, 0.2);
+}
+
+.icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.icon-btn-primary {
+    color: var(--primary);
+}
+
+.icon-btn-danger {
+    color: var(--danger);
+}
+
+.icon-btn-warning {
+    color: var(--warning);
+}
+
+.icon-btn-success {
+    color: var(--success);
+}
+
+.table-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .data-table {
     width: 100%;
     border-collapse: collapse;
@@ -838,8 +882,8 @@ a {
     max-height: 260px;
     overflow-y: auto;
     padding-right: 6px;
-    font-size: 11px;
-    line-height: 1.2;
+    font-size: 12px;
+    line-height: 1.4;
 }
 
 .alert-event-card {
@@ -853,10 +897,18 @@ a {
     display: flex;
     justify-content: space-between;
     gap: 12px;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--muted);
     margin-bottom: 6px;
+}
+
+.alert-event-time {
+    font-weight: 700;
+    color: var(--primary);
+    background: rgba(14, 165, 233, 0.14);
+    padding: 2px 8px;
+    border-radius: 999px;
 }
 
 .alert-event-meta {
@@ -871,7 +923,7 @@ a {
 }
 
 .alert-event-meta-key {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -879,10 +931,21 @@ a {
 }
 
 .alert-event-meta-value {
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.2;
     text-align: right;
     word-break: break-word;
+}
+
+.alert-event-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.16);
+    color: var(--primary);
+    font-weight: 600;
 }
 
 .alert-event-empty {
