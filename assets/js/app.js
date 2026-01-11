@@ -14,7 +14,7 @@ let worldMapData = {
 };
 let sourcesChart = null;
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' });
-const REPEATED_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const REPEATED_ALERT_WINDOW_MS = 5 * 60 * 1000;
 
 // Utility functions
 function normalizeString(value) {
@@ -459,6 +459,10 @@ function updateIpsTable(data) {
 async function loadAlerts() {
     try {
         alertsData = await apiGet('/alerts.php');
+        const totalCount = document.getElementById('alertsTotalCount');
+        if (totalCount) {
+            totalCount.textContent = alertsData.length;
+        }
         updateAlertFilterOptions();
         renderAlerts();
     } catch (error) {
@@ -507,14 +511,17 @@ function renderAlerts() {
         const scenarioValue = normalizeString(alert.scenario);
         const ipValue = normalizeString(alert.source_ip);
         const machineValue = normalizeString(alert.machine_id);
-        const decisionsCount = `${alert.decisions ? alert.decisions.length : 0}`;
+        const countryValue = normalizeString(alert.source_country);
+        const decisionsCount = alert.decisions ? alert.decisions.length : 0;
         const isRepeated = repeatedAlertIds.has(alert.id);
+        const hasDecisions = decisionsCount > 0;
 
         return (
             matchesFilter(scenarioValue, filters.scenario) &&
             matchesFilter(ipValue, filters.ip) &&
             matchesFilter(machineValue, filters.machine) &&
-            matchesFilter(decisionsCount, filters.decisions) &&
+            matchesFilter(countryValue, filters.country) &&
+            (!filters.hasDecisionsOnly || hasDecisions) &&
             (!filters.repeatedOnly || isRepeated)
         );
     });
@@ -570,12 +577,12 @@ function renderAlerts() {
         return `
             <tr class="${isRepeated ? 'alert-repeated' : ''}">
                 <td>${formatDateTime(alert.created_at)}</td>
-                <td title="${alert.scenario}" data-filter-target="alertFilterScenario" data-filter-value="${alert.scenario}">${scenarioLabel} ${repeatedBadge}</td>
-                <td data-filter-target="alertFilterMachine" data-filter-value="${alert.machine_id || ''}">${machineLabel}</td>
-                <td data-filter-target="alertFilterIp" data-filter-value="${alert.source_ip || ''}">${alert.source_ip || '-'}</td>
-                <td>${flag} ${alert.source_country || '-'}</td>
+                <td class="table-filter-link" title="${alert.scenario}" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterScenario" data-filter-value="${alert.scenario}">${scenarioLabel} ${repeatedBadge}</td>
+                <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterMachine" data-filter-value="${alert.machine_id || ''}">${machineLabel}</td>
+                <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterIp" data-filter-value="${alert.source_ip || ''}">${alert.source_ip || '-'}</td>
+                <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterCountry" data-filter-value="${alert.source_country || ''}">${flag} ${alert.source_country || '-'}</td>
                 <td>${alert.events_count || 0}</td>
-                <td data-filter-target="alertFilterDecisions" data-filter-value="${decisionsCount}">${decisionsCount}</td>
+                <td>${decisionsCount}</td>
                 <td>
                     <button class="btn btn-small" onclick="viewAlert(${alert.id})">Detail</button>
                     <button class="btn btn-small btn-danger" onclick="deleteAlert(${alert.id})">Smazat</button>
@@ -680,14 +687,16 @@ function getAlertFilters() {
         scenario: normalizeString(document.getElementById('alertFilterScenario')?.value),
         ip: normalizeString(document.getElementById('alertFilterIp')?.value),
         machine: normalizeString(document.getElementById('alertFilterMachine')?.value),
-        decisions: normalizeString(document.getElementById('alertFilterDecisions')?.value),
-        repeatedOnly: document.getElementById('alertFilterRepeated')?.checked || false
+        country: normalizeString(document.getElementById('alertFilterCountry')?.value),
+        repeatedOnly: document.getElementById('alertFilterRepeated')?.checked || false,
+        hasDecisionsOnly: document.getElementById('alertFilterHasDecisions')?.checked || false
     };
 }
 
 function updateAlertFilterOptions() {
     setDatalistOptions('alertScenarioList', uniqueValues(alertsData.map(alert => alert.scenario?.split('/').pop())));
     setDatalistOptions('alertIpList', uniqueValues(alertsData.map(alert => alert.source_ip)));
+    setDatalistOptions('alertCountryList', uniqueValues(alertsData.map(alert => alert.source_country)));
     const machineOptions = uniqueValues(alertsData.map(alert => alert.machine_id));
     const machineSelect = document.getElementById('alertFilterMachine');
     if (machineSelect) {
@@ -698,12 +707,14 @@ function updateAlertFilterOptions() {
 }
 
 function clearAlertFilters() {
-    const inputs = document.querySelectorAll('#alertFilterScenario, #alertFilterIp, #alertFilterMachine, #alertFilterDecisions');
+    const inputs = document.querySelectorAll('#alertFilterScenario, #alertFilterIp, #alertFilterMachine, #alertFilterCountry');
     inputs.forEach(input => {
         if (input) input.value = '';
     });
     const repeatedCheckbox = document.getElementById('alertFilterRepeated');
     if (repeatedCheckbox) repeatedCheckbox.checked = false;
+    const decisionCheckbox = document.getElementById('alertFilterHasDecisions');
+    if (decisionCheckbox) decisionCheckbox.checked = false;
     renderAlerts();
 }
 

@@ -640,6 +640,33 @@ a {
     white-space: nowrap;
 }
 
+.table-filter-link {
+    position: relative;
+    cursor: pointer;
+}
+
+.table-filter-link::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    transform: translateY(-6px);
+    background: #111827;
+    color: #f9fafb;
+    font-size: 11px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 2;
+}
+
+.table-filter-link:hover::after {
+    opacity: 1;
+}
+
 .data-table th.sortable {
     cursor: pointer;
     user-select: none;
