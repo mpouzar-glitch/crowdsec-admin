@@ -280,6 +280,173 @@ function buildWorldMapDatasetFromAlerts(alerts, mode) {
     return { values, max };
 }
 
+function getAlertHost(alert) {
+    return alert.machine_id || 'Neznámý';
+}
+
+function getAlertCountry(alert) {
+    return alert.source_country || 'Unknown';
+}
+
+function getAlertHourKey(alert) {
+    const date = new Date(alert.created_at);
+    if (Number.isNaN(date.getTime())) return null;
+    date.setMinutes(0, 0, 0);
+    return date.getTime();
+}
+
+function hasActiveDashboardFilters() {
+    const filters = dashboardState.filters;
+    return Object.values(filters).some(set => set.size > 0);
+}
+
+function applyDashboardFilters(alerts) {
+    const { scenarios, countries, hosts, hours } = dashboardState.filters;
+    return alerts.filter(alert => {
+        const scenario = alert.scenario || '';
+        const country = getAlertCountry(alert);
+        const host = getAlertHost(alert);
+        const hourKey = getAlertHourKey(alert);
+
+        if (scenarios.size > 0 && !scenarios.has(scenario)) return false;
+        if (countries.size > 0 && !countries.has(country)) return false;
+        if (hosts.size > 0 && !hosts.has(host)) return false;
+        if (hours.size > 0 && (hourKey === null || !hours.has(hourKey))) return false;
+        return true;
+    });
+}
+
+function toggleDashboardFilter(set, value) {
+    if (value === null || value === undefined) return;
+    if (set.has(value)) {
+        set.delete(value);
+    } else {
+        set.add(value);
+    }
+}
+
+function clearDashboardFilters() {
+    Object.values(dashboardState.filters).forEach(set => set.clear());
+    renderDashboard();
+}
+
+function updateDashboardFilterStatus() {
+    const status = document.getElementById('dashboardFiltersStatus');
+    const resetButton = document.getElementById('dashboardFiltersReset');
+    if (!status) return;
+
+    const parts = [];
+    const { scenarios, countries, hosts, hours } = dashboardState.filters;
+    if (scenarios.size) parts.push(`Scénáře (${scenarios.size})`);
+    if (countries.size) parts.push(`Země (${countries.size})`);
+    if (hosts.size) parts.push(`Hosté (${hosts.size})`);
+    if (hours.size) parts.push(`Hodiny (${hours.size})`);
+
+    if (parts.length === 0) {
+        status.textContent = 'Žádný filtr';
+        if (resetButton) resetButton.disabled = true;
+        return;
+    }
+
+    status.textContent = `Aktivní filtry: ${parts.join(', ')}`;
+    if (resetButton) resetButton.disabled = false;
+}
+
+function setupDashboardFilterControls() {
+    const resetButton = document.getElementById('dashboardFiltersReset');
+    if (resetButton && !resetButton.dataset.bound) {
+        resetButton.addEventListener('click', clearDashboardFilters);
+        resetButton.dataset.bound = 'true';
+    }
+}
+
+function buildTimelineData(alerts) {
+    const buckets = new Map();
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    alerts.forEach(alert => {
+        const createdAt = new Date(alert.created_at);
+        if (Number.isNaN(createdAt.getTime()) || createdAt.getTime() < cutoff) return;
+        const hourKey = getAlertHourKey(alert);
+        if (hourKey === null) return;
+        buckets.set(hourKey, (buckets.get(hourKey) || 0) + 1);
+    });
+
+    return Array.from(buckets.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([hourKey, count]) => {
+            const date = new Date(hourKey);
+            return {
+                hour: hourKey,
+                label: date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }),
+                count
+            };
+        });
+}
+
+function buildTimelineFromStats(rows) {
+    return (rows || []).map(row => {
+        const date = new Date(row.hour);
+        const isValid = !Number.isNaN(date.getTime());
+        const hourKey = isValid ? date.getTime() : row.hour;
+        const label = isValid
+            ? date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })
+            : row.hour;
+        return {
+            hour: hourKey,
+            label,
+            count: Number(row.count) || 0
+        };
+    });
+}
+
+function buildTopItems(alerts, getKey, limit) {
+    const counts = new Map();
+    alerts.forEach(alert => {
+        const key = getKey(alert);
+        if (!key) return;
+        counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+}
+
+function buildTopScenarios(alerts) {
+    return buildTopItems(alerts, alert => alert.scenario, 10)
+        .map(row => ({ scenario: row.key, count: row.count }));
+}
+
+function buildTopCountries(alerts) {
+    return buildTopItems(alerts, alert => alert.source_country, 10)
+        .map(row => ({ country: row.key, count: row.count }));
+}
+
+function buildTopIps(alerts) {
+    return buildTopItems(alerts, alert => alert.source_ip, 10)
+        .map(row => ({ ip: row.key, count: row.count }));
+}
+
+function buildAlertsByHost(alerts) {
+    return buildTopItems(alerts, alert => getAlertHost(alert), 7)
+        .map(row => ({ host: row.key, count: row.count }));
+}
+
+function buildWorldMapDatasetFromAlerts(alerts, mode) {
+    const values = {};
+    let max = 0;
+    alerts.forEach(alert => {
+        const country = alert.source_country;
+        if (!country) return;
+        const key = country.toUpperCase();
+        const increment = mode === 'decisions' ? Number(alert.decisions_count || 0) : 1;
+        if (mode === 'decisions' && increment === 0) return;
+        values[key] = (values[key] || 0) + increment;
+        if (values[key] > max) max = values[key];
+    });
+    return { values, max };
+}
+
 function updateMapLegend(mode) {
     const legend = document.getElementById('mapLegend');
     if (!legend) return;
@@ -657,23 +824,37 @@ function updateSummaryCards(stats, filteredAlerts, topScenarios, topCountries) {
 
 function renderDashboard() {
     const stats = dashboardState.stats || {};
+    const hasFilters = hasActiveDashboardFilters();
     const filteredAlerts = applyDashboardFilters(dashboardState.alerts);
-    const topScenarios = buildTopScenarios(filteredAlerts);
-    const topCountries = buildTopCountries(filteredAlerts);
-    const topIps = buildTopIps(filteredAlerts);
-    const alertsByHost = buildAlertsByHost(filteredAlerts);
-    const timelineData = buildTimelineData(filteredAlerts);
+    if (hasFilters) {
+        const topScenarios = buildTopScenarios(filteredAlerts);
+        const topCountries = buildTopCountries(filteredAlerts);
+        const topIps = buildTopIps(filteredAlerts);
+        const alertsByHost = buildAlertsByHost(filteredAlerts);
+        const timelineData = buildTimelineData(filteredAlerts);
 
-    updateSummaryCards(stats, filteredAlerts, topScenarios, topCountries);
-    updateTimelineChart(timelineData);
-    updateScenariosChart(topScenarios);
-    updateCountriesTable(topCountries);
-    updateIpsTable(topIps);
-    updateSourcesChart(alertsByHost);
+        updateSummaryCards(stats, filteredAlerts, topScenarios, topCountries);
+        updateTimelineChart(timelineData);
+        updateScenariosChart(topScenarios);
+        updateCountriesTable(topCountries);
+        updateIpsTable(topIps);
+        updateSourcesChart(alertsByHost);
 
-    worldMapData.alerts = buildWorldMapDatasetFromAlerts(filteredAlerts, 'alerts');
-    worldMapData.decisions = buildWorldMapDatasetFromAlerts(filteredAlerts, 'decisions');
-    renderWorldMap();
+        worldMapData.alerts = buildWorldMapDatasetFromAlerts(filteredAlerts, 'alerts');
+        worldMapData.decisions = buildWorldMapDatasetFromAlerts(filteredAlerts, 'decisions');
+        renderWorldMap();
+    } else {
+        updateSummaryCards(stats, filteredAlerts, stats.top_scenarios || [], stats.top_countries || []);
+        updateTimelineChart(buildTimelineFromStats(stats.timeline_24h || []));
+        updateScenariosChart(stats.top_scenarios || []);
+        updateCountriesTable(stats.top_countries || []);
+        updateIpsTable(stats.top_ips || []);
+        updateSourcesChart(stats.alerts_by_host || []);
+
+        worldMapData.alerts = buildMapDataset(stats.top_countries || []);
+        worldMapData.decisions = buildMapDataset(stats.top_decision_countries || []);
+        renderWorldMap();
+    }
 
     updateDashboardFilterStatus();
 }
