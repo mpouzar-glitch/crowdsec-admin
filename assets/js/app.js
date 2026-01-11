@@ -9,6 +9,7 @@ let alertSortState = { key: 'created_at', direction: 'desc' };
 let decisionSortState = { key: 'created_at', direction: 'desc' };
 let worldMap = null;
 let worldMapMode = 'alerts';
+let alertFilterOptions = null;
 let worldMapData = {
     alerts: { values: {}, max: 0 },
     decisions: { values: {}, max: 0 }
@@ -25,7 +26,6 @@ const dashboardState = {
     }
 };
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' });
-const REPEATED_ALERT_WINDOW_MS = 5 * 60 * 1000;
 
 // Utility functions
 function normalizeString(value) {
@@ -198,6 +198,7 @@ function clearDashboardFilters() {
 function updateDashboardFilterStatus() {
     const status = document.getElementById('dashboardFiltersStatus');
     const resetButton = document.getElementById('dashboardFiltersReset');
+    const filterSection = document.querySelector('.dashboard-filters');
     if (!status) return;
 
     const parts = [];
@@ -218,11 +219,13 @@ function updateDashboardFilterStatus() {
     if (parts.length === 0) {
         status.textContent = 'Žádný filtr';
         if (resetButton) resetButton.disabled = true;
+        if (filterSection) filterSection.style.display = 'none';
         return;
     }
 
     status.textContent = `Aktivní filtry: ${parts.join(', ')}`;
     if (resetButton) resetButton.disabled = false;
+    if (filterSection) filterSection.style.display = '';
 }
 
 function setupDashboardFilterControls() {
@@ -357,6 +360,7 @@ function clearDashboardFilters() {
 function updateDashboardFilterStatus() {
     const status = document.getElementById('dashboardFiltersStatus');
     const resetButton = document.getElementById('dashboardFiltersReset');
+    const filterSection = document.querySelector('.dashboard-filters');
     if (!status) return;
 
     const parts = [];
@@ -377,11 +381,13 @@ function updateDashboardFilterStatus() {
     if (parts.length === 0) {
         status.textContent = 'Žádný filtr';
         if (resetButton) resetButton.disabled = true;
+        if (filterSection) filterSection.style.display = 'none';
         return;
     }
 
     status.textContent = `Aktivní filtry: ${parts.join(', ')}`;
     if (resetButton) resetButton.disabled = false;
+    if (filterSection) filterSection.style.display = '';
 }
 
 function setupDashboardFilterControls() {
@@ -685,7 +691,7 @@ async function loadDashboard() {
     try {
         const [stats, alerts] = await Promise.all([
             apiGet('/stats.php'),
-            apiGet('/alerts.php')
+            apiGet('/alerts.php?limit=0')
         ]);
         dashboardState.stats = stats;
         dashboardState.alerts = alerts || [];
@@ -923,11 +929,16 @@ async function loadAlerts() {
         const filters = getAlertFilterParams();
         const params = buildAlertQueryParams(filters);
         const query = params.toString();
-        const [alerts, summary] = await Promise.all([
+        const [alerts, summary, filterOptions] = await Promise.all([
             apiGet(`/alerts.php${query ? `?${query}` : ''}`),
-            apiGet(`/alerts.php?summary=1${query ? `&${query}` : ''}`)
+            apiGet(`/alerts.php?summary=1${query ? `&${query}` : ''}`),
+            apiGet('/alerts.php?filters=1')
         ]);
-        alertsData = alerts;
+        alertsData = (alerts || []).map(alert => ({
+            ...alert,
+            is_repeated: Boolean(Number(alert.is_repeated))
+        }));
+        alertFilterOptions = filterOptions || null;
         const totalCount = document.getElementById('alertsTotalCount');
         if (totalCount) {
             totalCount.textContent = summary?.total_alerts ?? alertsData.length;
@@ -959,42 +970,11 @@ function getAlertFilterParams() {
     };
 }
 
-function getRepeatedAlertIds(alerts) {
-    const groups = new Map();
-
-    alerts.forEach(alert => {
-        const scenario = alert.scenario || '';
-        const sourceIp = alert.source_ip || '';
-        const createdAt = new Date(alert.created_at);
-        if (!scenario || !sourceIp || Number.isNaN(createdAt.getTime())) {
-            return;
-        }
-
-        const key = `${scenario}__${sourceIp}`;
-        const entry = groups.get(key) || { ids: [], min: createdAt, max: createdAt, count: 0 };
-        entry.ids.push(alert.id);
-        entry.count += 1;
-        if (createdAt < entry.min) entry.min = createdAt;
-        if (createdAt > entry.max) entry.max = createdAt;
-        groups.set(key, entry);
-    });
-
-    const repeatedIds = new Set();
-    groups.forEach(entry => {
-        if (entry.count > 1 && (entry.max - entry.min) >= REPEATED_ALERT_WINDOW_MS) {
-            entry.ids.forEach(id => repeatedIds.add(id));
-        }
-    });
-
-    return repeatedIds;
-}
-
 function renderAlerts() {
     const tbody = document.querySelector('#alertsTable tbody');
     if (!tbody) return;
 
     const filters = getAlertFilters();
-    const repeatedAlertIds = getRepeatedAlertIds(alertsData);
 
     const filtered = alertsData.filter(alert => {
         const scenarioValue = normalizeString(alert.scenario);
@@ -1002,7 +982,7 @@ function renderAlerts() {
         const machineValue = normalizeString(alert.machine_id);
         const countryValue = normalizeString(alert.source_country);
         const decisionsCount = alert.decisions ? alert.decisions.length : 0;
-        const isRepeated = repeatedAlertIds.has(alert.id);
+        const isRepeated = alert.is_repeated === true;
         const hasDecisions = decisionsCount > 0;
 
         return (
@@ -1060,7 +1040,7 @@ function renderAlerts() {
         const flag = getCountryFlagHtml(alert.source_country);
         const scenarioLabel = alert.scenario?.split('/').pop() || '';
         const machineLabel = alert.machine_id || '-';
-        const isRepeated = repeatedAlertIds.has(alert.id);
+        const isRepeated = alert.is_repeated === true;
         const repeatedBadge = isRepeated ? '<span class="badge badge-repeated">Opakovaný</span>' : '';
 
         return `
@@ -1183,10 +1163,14 @@ function getAlertFilters() {
 }
 
 function updateAlertFilterOptions() {
-    setDatalistOptions('alertScenarioList', uniqueValues(alertsData.map(alert => alert.scenario?.split('/').pop())));
-    setDatalistOptions('alertIpList', uniqueValues(alertsData.map(alert => alert.source_ip)));
-    setDatalistOptions('alertCountryList', uniqueValues(alertsData.map(alert => alert.source_country)));
-    const machineOptions = uniqueValues(alertsData.map(alert => alert.machine_id));
+    const scenarios = alertFilterOptions?.scenarios || alertsData.map(alert => alert.scenario);
+    const ips = alertFilterOptions?.ips || alertsData.map(alert => alert.source_ip);
+    const countries = alertFilterOptions?.countries || alertsData.map(alert => alert.source_country);
+    const machines = alertFilterOptions?.machines || alertsData.map(alert => alert.machine_id);
+    setDatalistOptions('alertScenarioList', uniqueValues(scenarios.map(scenario => scenario?.split('/').pop())));
+    setDatalistOptions('alertIpList', uniqueValues(ips));
+    setDatalistOptions('alertCountryList', uniqueValues(countries));
+    const machineOptions = uniqueValues(machines);
     const machineSelect = document.getElementById('alertFilterMachine');
     if (machineSelect) {
         machineSelect.innerHTML = '<option value="">Všechny machine</option>' + machineOptions.map(option => `
