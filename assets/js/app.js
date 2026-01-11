@@ -1824,3 +1824,9 @@ window.addEventListener('DOMContentLoaded', () => {
     initializeSortableTable('alertsTable', alertSortState, renderAlerts);
     initializeSortableTable('decisionsTable', decisionSortState, renderDecisions);
 });
+
+window.loadAllowLists = loadAllowLists;
+window.loadWhitelist = loadWhitelist;
+window.openWhitelistModal = openWhitelistModal;
+window.refreshWhitelist = refreshWhitelist;
+window.clearWhitelistFilters = clearWhitelistFilters;
