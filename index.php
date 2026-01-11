@@ -28,6 +28,11 @@ renderPageStart($appTitle . ' - Dashboard', 'dashboard', $appTitle);
         </div>
     </section>
 
+    <section class="dashboard-filters">
+        <div class="dashboard-filters-status" id="dashboardFiltersStatus">Žádný filtr</div>
+        <button class="btn btn-small" type="button" id="dashboardFiltersReset" disabled>Zrušit výběr</button>
+    </section>
+
     <section class="grid-2">
         <div class="card">
             <div class="card-header">

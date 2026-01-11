@@ -13,6 +13,16 @@ let worldMapData = {
     decisions: { values: {}, max: 0 }
 };
 let sourcesChart = null;
+const dashboardState = {
+    stats: null,
+    alerts: [],
+    filters: {
+        scenarios: new Set(),
+        countries: new Set(),
+        hosts: new Set(),
+        hours: new Set()
+    }
+};
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' });
 const REPEATED_ALERT_WINDOW_MS = 5 * 60 * 1000;
 
@@ -119,17 +129,153 @@ function getCountryFlagHtml(countryCode) {
     return `<span class="fi fi-${normalized} country-flag" aria-label="${countryCode}"></span>`;
 }
 
-function buildMapDataset(rows) {
+function getAlertHost(alert) {
+    return alert.machine_id || 'Neznámý';
+}
+
+function getAlertCountry(alert) {
+    return alert.source_country || 'Unknown';
+}
+
+function getAlertHourKey(alert) {
+    const date = new Date(alert.created_at);
+    if (Number.isNaN(date.getTime())) return null;
+    date.setMinutes(0, 0, 0);
+    return date.getTime();
+}
+
+function hasActiveDashboardFilters() {
+    const filters = dashboardState.filters;
+    return Object.values(filters).some(set => set.size > 0);
+}
+
+function applyDashboardFilters(alerts) {
+    const { scenarios, countries, hosts, hours } = dashboardState.filters;
+    return alerts.filter(alert => {
+        const scenario = alert.scenario || '';
+        const country = getAlertCountry(alert);
+        const host = getAlertHost(alert);
+        const hourKey = getAlertHourKey(alert);
+
+        if (scenarios.size > 0 && !scenarios.has(scenario)) return false;
+        if (countries.size > 0 && !countries.has(country)) return false;
+        if (hosts.size > 0 && !hosts.has(host)) return false;
+        if (hours.size > 0 && (hourKey === null || !hours.has(hourKey))) return false;
+        return true;
+    });
+}
+
+function toggleDashboardFilter(set, value) {
+    if (value === null || value === undefined) return;
+    if (set.has(value)) {
+        set.delete(value);
+    } else {
+        set.add(value);
+    }
+}
+
+function clearDashboardFilters() {
+    Object.values(dashboardState.filters).forEach(set => set.clear());
+    renderDashboard();
+}
+
+function updateDashboardFilterStatus() {
+    const status = document.getElementById('dashboardFiltersStatus');
+    const resetButton = document.getElementById('dashboardFiltersReset');
+    if (!status) return;
+
+    const parts = [];
+    const { scenarios, countries, hosts, hours } = dashboardState.filters;
+    if (scenarios.size) parts.push(`Scénáře (${scenarios.size})`);
+    if (countries.size) parts.push(`Země (${countries.size})`);
+    if (hosts.size) parts.push(`Hosté (${hosts.size})`);
+    if (hours.size) parts.push(`Hodiny (${hours.size})`);
+
+    if (parts.length === 0) {
+        status.textContent = 'Žádný filtr';
+        if (resetButton) resetButton.disabled = true;
+        return;
+    }
+
+    status.textContent = `Aktivní filtry: ${parts.join(', ')}`;
+    if (resetButton) resetButton.disabled = false;
+}
+
+function setupDashboardFilterControls() {
+    const resetButton = document.getElementById('dashboardFiltersReset');
+    if (resetButton && !resetButton.dataset.bound) {
+        resetButton.addEventListener('click', clearDashboardFilters);
+        resetButton.dataset.bound = 'true';
+    }
+}
+
+function buildTimelineData(alerts) {
+    const buckets = new Map();
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    alerts.forEach(alert => {
+        const createdAt = new Date(alert.created_at);
+        if (Number.isNaN(createdAt.getTime()) || createdAt.getTime() < cutoff) return;
+        const hourKey = getAlertHourKey(alert);
+        if (hourKey === null) return;
+        buckets.set(hourKey, (buckets.get(hourKey) || 0) + 1);
+    });
+
+    return Array.from(buckets.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([hourKey, count]) => {
+            const date = new Date(hourKey);
+            return {
+                hour: hourKey,
+                label: date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }),
+                count
+            };
+        });
+}
+
+function buildTopItems(alerts, getKey, limit) {
+    const counts = new Map();
+    alerts.forEach(alert => {
+        const key = getKey(alert);
+        if (!key) return;
+        counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+}
+
+function buildTopScenarios(alerts) {
+    return buildTopItems(alerts, alert => alert.scenario, 10)
+        .map(row => ({ scenario: row.key, count: row.count }));
+}
+
+function buildTopCountries(alerts) {
+    return buildTopItems(alerts, alert => alert.source_country, 10)
+        .map(row => ({ country: row.key, count: row.count }));
+}
+
+function buildTopIps(alerts) {
+    return buildTopItems(alerts, alert => alert.source_ip, 10)
+        .map(row => ({ ip: row.key, count: row.count }));
+}
+
+function buildAlertsByHost(alerts) {
+    return buildTopItems(alerts, alert => getAlertHost(alert), 7)
+        .map(row => ({ host: row.key, count: row.count }));
+}
+
+function buildWorldMapDatasetFromAlerts(alerts, mode) {
     const values = {};
     let max = 0;
-    (rows || []).forEach(row => {
-        if (!row.country) return;
-        const code = row.country.toUpperCase();
-        const count = Number(row.count) || 0;
-        values[code] = count;
-        if (count > max) {
-            max = count;
-        }
+    alerts.forEach(alert => {
+        const country = alert.source_country;
+        if (!country) return;
+        const key = country.toUpperCase();
+        const increment = mode === 'decisions' ? Number(alert.decisions_count || 0) : 1;
+        if (mode === 'decisions' && increment === 0) return;
+        values[key] = (values[key] || 0) + increment;
+        if (values[key] > max) max = values[key];
     });
     return { values, max };
 }
@@ -151,6 +297,7 @@ function renderWorldMap() {
 
     const dataset = worldMapData[worldMapMode] || { values: {}, max: 0 };
     const scale = ['#fef08a', '#ef4444'];
+    const selectedRegions = Array.from(dashboardState.filters.countries).map(country => country.toUpperCase());
 
     if (worldMap) {
         worldMap.destroy();
@@ -166,6 +313,8 @@ function renderWorldMap() {
         map: mapName,
         zoomButtons: false,
         backgroundColor: 'transparent',
+        regionsSelectable: true,
+        selectedRegions: selectedRegions,
         regionStyle: {
             initial: {
                 fill: '#e5e7eb',
@@ -185,6 +334,11 @@ function renderWorldMap() {
                 scale: scale,
                 normalizeFunction: 'polynomial'
             }]
+        },
+        onRegionClick: (event, code) => {
+            if (!code) return;
+            toggleDashboardFilter(dashboardState.filters.countries, code.toUpperCase());
+            renderDashboard();
         }
     });
 
@@ -201,7 +355,25 @@ function updateSourcesChart(data) {
     if (!ctx) return;
 
     const labels = data.map(row => row.host || 'Neznámý');
+    const hostKeys = data.map(row => row.host || 'Neznámý');
     const values = data.map(row => row.count);
+    const baseColors = [
+        '#ef4444',
+        '#f97316',
+        '#facc15',
+        '#22c55e',
+        '#38bdf8',
+        '#a855f7',
+        '#64748b'
+    ];
+    const mutedColor = '#e2e8f0';
+    const hasFilters = dashboardState.filters.hosts.size > 0;
+    const colors = labels.map((_, index) => {
+        if (!hasFilters) return baseColors[index % baseColors.length];
+        return dashboardState.filters.hosts.has(hostKeys[index])
+            ? baseColors[index % baseColors.length]
+            : mutedColor;
+    });
 
     if (sourcesChart) {
         sourcesChart.destroy();
@@ -213,15 +385,7 @@ function updateSourcesChart(data) {
             labels: labels,
             datasets: [{
                 data: values,
-                backgroundColor: [
-                    '#ef4444',
-                    '#f97316',
-                    '#facc15',
-                    '#22c55e',
-                    '#38bdf8',
-                    '#a855f7',
-                    '#64748b'
-                ]
+                backgroundColor: colors
             }]
         },
         options: {
@@ -234,6 +398,12 @@ function updateSourcesChart(data) {
                         boxWidth: 12
                     }
                 }
+            },
+            onClick: (event, elements) => {
+                if (!elements.length) return;
+                const index = elements[0].index;
+                toggleDashboardFilter(dashboardState.filters.hosts, hostKeys[index]);
+                renderDashboard();
             }
         }
     });
@@ -299,49 +469,14 @@ function showNotification(message, type = 'info') {
 // Dashboard functions
 async function loadDashboard() {
     try {
-        const stats = await apiGet('/stats.php');
-
-        document.getElementById('totalAlerts').textContent = stats.total_alerts || 0;
-        document.getElementById('activeDecisions').textContent = stats.active_decisions || 0;
-
-        if (stats.top_scenarios && stats.top_scenarios.length > 0) {
-            const topScenario = stats.top_scenarios[0];
-            document.getElementById('topScenario').textContent =
-                `${topScenario.scenario} (${topScenario.count})`;
-        }
-
-        if (stats.top_countries && stats.top_countries.length > 0) {
-            const topCountry = stats.top_countries[0];
-            const flag = getCountryFlagHtml(topCountry.country);
-            document.getElementById('topCountry').innerHTML =
-                `${flag} ${topCountry.country} (${topCountry.count})`;
-        }
-
-        if (stats.timeline_24h) {
-            updateTimelineChart(stats.timeline_24h);
-        }
-
-        if (stats.top_scenarios) {
-            updateScenariosChart(stats.top_scenarios);
-        }
-
-        if (stats.top_countries) {
-            updateCountriesTable(stats.top_countries);
-        }
-
-        if (stats.top_ips) {
-            updateIpsTable(stats.top_ips);
-        }
-
-        if (stats.top_countries || stats.top_decision_countries) {
-            worldMapData.alerts = buildMapDataset(stats.top_countries || []);
-            worldMapData.decisions = buildMapDataset(stats.top_decision_countries || []);
-            renderWorldMap();
-        }
-
-        if (stats.alerts_by_host) {
-            updateSourcesChart(stats.alerts_by_host);
-        }
+        const [stats, alerts] = await Promise.all([
+            apiGet('/stats.php'),
+            apiGet('/alerts.php')
+        ]);
+        dashboardState.stats = stats;
+        dashboardState.alerts = alerts || [];
+        setupDashboardFilterControls();
+        renderDashboard();
 
     } catch (error) {
         console.error('Failed to load dashboard:', error);
@@ -353,8 +488,16 @@ function updateTimelineChart(data) {
     const ctx = document.getElementById('timelineChart');
     if (!ctx) return;
 
-    const labels = data.map(d => new Date(d.hour).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }));
+    const labels = data.map(d => d.label);
     const values = data.map(d => d.count);
+    const hourKeys = data.map(d => d.hour);
+    const selectedHours = dashboardState.filters.hours;
+    const hasSelection = selectedHours.size > 0;
+    const pointRadius = hourKeys.map(hourKey => (hasSelection && selectedHours.has(hourKey) ? 6 : 3));
+    const pointBackgroundColor = hourKeys.map(hourKey => {
+        if (!hasSelection) return '#2563eb';
+        return selectedHours.has(hourKey) ? '#2563eb' : '#cbd5f5';
+    });
 
     if (timelineChart) {
         timelineChart.destroy();
@@ -369,6 +512,8 @@ function updateTimelineChart(data) {
                 data: values,
                 borderColor: '#2563eb',
                 backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                pointRadius: pointRadius,
+                pointBackgroundColor: pointBackgroundColor,
                 tension: 0.4,
                 fill: true
             }]
@@ -381,6 +526,12 @@ function updateTimelineChart(data) {
             },
             scales: {
                 y: { beginAtZero: true }
+            },
+            onClick: (event, elements) => {
+                if (!elements.length) return;
+                const index = elements[0].index;
+                toggleDashboardFilter(dashboardState.filters.hours, hourKeys[index]);
+                renderDashboard();
             }
         }
     });
@@ -391,8 +542,16 @@ function updateScenariosChart(data) {
     const ctx = document.getElementById('scenariosChart');
     if (!ctx) return;
 
+    const scenarioKeys = data.map(d => d.scenario);
     const labels = data.map(d => d.scenario.split('/').pop());
     const values = data.map(d => d.count);
+    const hasSelection = dashboardState.filters.scenarios.size > 0;
+    const baseColor = '#2563eb';
+    const mutedColor = '#bfdbfe';
+    const colors = scenarioKeys.map(scenario => {
+        if (!hasSelection) return baseColor;
+        return dashboardState.filters.scenarios.has(scenario) ? baseColor : mutedColor;
+    });
 
     if (scenariosChart) {
         scenariosChart.destroy();
@@ -405,7 +564,7 @@ function updateScenariosChart(data) {
             datasets: [{
                 label: 'Počet',
                 data: values,
-                backgroundColor: '#2563eb'
+                backgroundColor: colors
             }]
         },
         options: {
@@ -416,6 +575,12 @@ function updateScenariosChart(data) {
             },
             scales: {
                 y: { beginAtZero: true }
+            },
+            onClick: (event, elements) => {
+                if (!elements.length) return;
+                const index = elements[0].index;
+                toggleDashboardFilter(dashboardState.filters.scenarios, scenarioKeys[index]);
+                renderDashboard();
             }
         }
     });
@@ -453,6 +618,64 @@ function updateIpsTable(data) {
             <td>${row.count}</td>
         </tr>
     `).join('');
+}
+
+function updateSummaryCards(stats, filteredAlerts, topScenarios, topCountries) {
+    const totalAlerts = document.getElementById('totalAlerts');
+    const activeDecisions = document.getElementById('activeDecisions');
+    const topScenario = document.getElementById('topScenario');
+    const topCountry = document.getElementById('topCountry');
+    const hasFilters = hasActiveDashboardFilters();
+
+    if (totalAlerts) {
+        totalAlerts.textContent = hasFilters
+            ? filteredAlerts.length
+            : stats?.total_alerts || filteredAlerts.length;
+    }
+
+    if (activeDecisions) {
+        activeDecisions.textContent = stats?.active_decisions || 0;
+    }
+
+    if (topScenario) {
+        const scenarioRow = hasFilters ? topScenarios[0] : stats?.top_scenarios?.[0];
+        topScenario.textContent = scenarioRow
+            ? `${scenarioRow.scenario} (${scenarioRow.count})`
+            : '-';
+    }
+
+    if (topCountry) {
+        const countryRow = hasFilters ? topCountries[0] : stats?.top_countries?.[0];
+        if (countryRow) {
+            const flag = getCountryFlagHtml(countryRow.country);
+            topCountry.innerHTML = `${flag} ${countryRow.country} (${countryRow.count})`;
+        } else {
+            topCountry.textContent = '-';
+        }
+    }
+}
+
+function renderDashboard() {
+    const stats = dashboardState.stats || {};
+    const filteredAlerts = applyDashboardFilters(dashboardState.alerts);
+    const topScenarios = buildTopScenarios(filteredAlerts);
+    const topCountries = buildTopCountries(filteredAlerts);
+    const topIps = buildTopIps(filteredAlerts);
+    const alertsByHost = buildAlertsByHost(filteredAlerts);
+    const timelineData = buildTimelineData(filteredAlerts);
+
+    updateSummaryCards(stats, filteredAlerts, topScenarios, topCountries);
+    updateTimelineChart(timelineData);
+    updateScenariosChart(topScenarios);
+    updateCountriesTable(topCountries);
+    updateIpsTable(topIps);
+    updateSourcesChart(alertsByHost);
+
+    worldMapData.alerts = buildWorldMapDatasetFromAlerts(filteredAlerts, 'alerts');
+    worldMapData.decisions = buildWorldMapDatasetFromAlerts(filteredAlerts, 'decisions');
+    renderWorldMap();
+
+    updateDashboardFilterStatus();
 }
 
 // Alerts functions
