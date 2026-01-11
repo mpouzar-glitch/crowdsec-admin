@@ -150,6 +150,41 @@ UNLOCK TABLES;
 commit;
 
 --
+-- Table structure for table `audit_log`
+--
+
+DROP TABLE IF EXISTS `audit_log`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `audit_log` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) DEFAULT NULL,
+  `username` varchar(100) DEFAULT NULL,
+  `action` varchar(100) NOT NULL,
+  `entity_type` varchar(50) DEFAULT 'quarantine',
+  `entity_id` int(11) DEFAULT NULL,
+  `target_type` varchar(50) DEFAULT NULL,
+  `target_id` int(11) DEFAULT NULL,
+  `details` text DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `timestamp` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `audit_log`
+--
+
+LOCK TABLES `audit_log` WRITE;
+/*!40000 ALTER TABLE `audit_log` DISABLE KEYS */;
+set autocommit=0;
+/*!40000 ALTER TABLE `audit_log` ENABLE KEYS */;
+UNLOCK TABLES;
+commit;
+
+--
 -- Table structure for table `allow_list_allowlist_items`
 --
 
