@@ -12,7 +12,7 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
     <section class="page-header">
         <div>
             <h1>Alerty</h1>
-            <p class="muted">Přehled všech incidentů v CrowdSec.</p>
+            <p class="muted">Přehled všech incidentů v CrowdSec. Celkem <strong id="alertsTotalCount">0</strong> alertů.</p>
         </div>
         <div class="toolbar">
             <button class="btn" onclick="refreshAlerts()">Obnovit</button>
@@ -37,13 +37,20 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
             </select>
         </div>
         <div class="filter-group">
-            <label for="alertFilterDecisions"><i class="fa-solid fa-gavel"></i> Rozhodnutí</label>
-            <input type="text" id="alertFilterDecisions" data-filter-key="decisions" placeholder="např. 1">
+            <label for="alertFilterCountry"><i class="fa-solid fa-flag"></i> Země</label>
+            <input type="text" id="alertFilterCountry" data-filter-key="country" list="alertCountryList" placeholder="např. CZ">
+            <datalist id="alertCountryList"></datalist>
         </div>
         <div class="filter-group checkbox">
             <label for="alertFilterRepeated">
                 <input type="checkbox" id="alertFilterRepeated" data-filter-key="repeated">
                 <i class="fa-solid fa-repeat"></i> Pouze opakující se alerty
+            </label>
+        </div>
+        <div class="filter-group checkbox">
+            <label for="alertFilterHasDecisions">
+                <input type="checkbox" id="alertFilterHasDecisions" data-filter-key="has_decisions">
+                <i class="fa-solid fa-gavel"></i> Pouze s rozhodnutím
             </label>
         </div>
         <div class="filter-actions">
