@@ -9,12 +9,59 @@ requireLogin();
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 
+const UINT32_MAX = 0xFFFFFFFF;
+const UINT32_BASE = 4294967296;
+const SIGNED_INT64_MAX = 9223372036854775807;
+const SIGNED_INT64_OFFSET = -9223372036854775807;
+
 function ipToUnsignedLong($ip) {
     $long = ip2long($ip);
     if ($long === false) {
         return null;
     }
     return (int)sprintf('%u', $long);
+}
+
+function ipv6ToUint32Parts($ip) {
+    $packed = inet_pton($ip);
+    if ($packed === false) {
+        return null;
+    }
+    $parts = unpack('N4', $packed);
+    return array_values($parts);
+}
+
+function unsigned64ToBiasedSigned(int $high32, int $low32): int {
+    if ($high32 === UINT32_MAX && $low32 === UINT32_MAX) {
+        return SIGNED_INT64_MAX;
+    }
+    if ($high32 >= 0x80000000) {
+        $highOffset = $high32 - 0x80000000;
+        return (int)($highOffset * UINT32_BASE + $low32 + 1);
+    }
+    return (int)($high32 * UINT32_BASE + $low32 + SIGNED_INT64_OFFSET);
+}
+
+function applyIpv6PrefixMask(array $parts, int $suffix): array {
+    $startParts = [];
+    $endParts = [];
+    $remaining = $suffix;
+
+    foreach ($parts as $part) {
+        if ($remaining >= 32) {
+            $mask = UINT32_MAX;
+        } elseif ($remaining <= 0) {
+            $mask = 0;
+        } else {
+            $mask = (UINT32_MAX << (32 - $remaining)) & UINT32_MAX;
+        }
+
+        $startParts[] = $part & $mask;
+        $endParts[] = $part | (~$mask & UINT32_MAX);
+        $remaining -= 32;
+    }
+
+    return [$startParts, $endParts];
 }
 
 function parseAllowListValue($value) {
@@ -28,59 +75,94 @@ function parseAllowListValue($value) {
         $ip = trim((string)$ip);
         $suffix = trim((string)$suffix);
 
-        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            return ['error' => 'Invalid IPv4 address'];
-        }
         if ($suffix === '' || !ctype_digit($suffix)) {
             return ['error' => 'Invalid subnet suffix'];
         }
 
         $suffix = (int)$suffix;
-        if ($suffix < 0 || $suffix > 32) {
-            return ['error' => 'Subnet suffix out of range'];
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            if ($suffix < 0 || $suffix > 32) {
+                return ['error' => 'Subnet suffix out of range'];
+            }
+
+            $ipLong = ipToUnsignedLong($ip);
+            if ($ipLong === null) {
+                return ['error' => 'Invalid IPv4 address'];
+            }
+
+            if ($suffix === 0) {
+                $startIp = 0;
+                $endIp = UINT32_MAX;
+            } else {
+                $mask = (UINT32_MAX << (32 - $suffix)) & UINT32_MAX;
+                $startIp = $ipLong & $mask;
+                $endIp = $startIp + (1 << (32 - $suffix)) - 1;
+            }
+
+            return [
+                'start_ip' => unsigned64ToBiasedSigned(0, (int)$startIp),
+                'end_ip' => unsigned64ToBiasedSigned(0, (int)$endIp),
+                'start_suffix' => unsigned64ToBiasedSigned(0, 0),
+                'end_suffix' => unsigned64ToBiasedSigned(0, 0),
+                'ip_size' => 4
+            ];
         }
 
-        $ipLong = ipToUnsignedLong($ip);
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            if ($suffix < 0 || $suffix > 128) {
+                return ['error' => 'Subnet suffix out of range'];
+            }
+
+            $parts = ipv6ToUint32Parts($ip);
+            if ($parts === null) {
+                return ['error' => 'Invalid IPv6 address'];
+            }
+
+            [$startParts, $endParts] = applyIpv6PrefixMask($parts, $suffix);
+
+            return [
+                'start_ip' => unsigned64ToBiasedSigned($startParts[0], $startParts[1]),
+                'end_ip' => unsigned64ToBiasedSigned($endParts[0], $endParts[1]),
+                'start_suffix' => unsigned64ToBiasedSigned($startParts[2], $startParts[3]),
+                'end_suffix' => unsigned64ToBiasedSigned($endParts[2], $endParts[3]),
+                'ip_size' => 16
+            ];
+        }
+
+        return ['error' => 'Invalid IP address'];
+    }
+
+    if (filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $ipLong = ipToUnsignedLong($value);
         if ($ipLong === null) {
             return ['error' => 'Invalid IPv4 address'];
         }
 
-        if ($suffix === 0) {
-            $startIp = 0;
-            $endIp = 0xFFFFFFFF;
-            $ipSize = 0xFFFFFFFF + 1;
-        } else {
-            $mask = (0xFFFFFFFF << (32 - $suffix)) & 0xFFFFFFFF;
-            $startIp = $ipLong & $mask;
-            $endIp = $startIp + (1 << (32 - $suffix)) - 1;
-            $ipSize = $endIp - $startIp + 1;
-        }
-
         return [
-            'start_ip' => $startIp,
-            'end_ip' => $endIp,
-            'start_suffix' => $suffix,
-            'end_suffix' => $suffix,
-            'ip_size' => $ipSize
+            'start_ip' => unsigned64ToBiasedSigned(0, $ipLong),
+            'end_ip' => unsigned64ToBiasedSigned(0, $ipLong),
+            'start_suffix' => unsigned64ToBiasedSigned(0, 0),
+            'end_suffix' => unsigned64ToBiasedSigned(0, 0),
+            'ip_size' => 4
         ];
     }
 
-    if (!filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-        return ['error' => 'Invalid IPv4 address'];
+    if (filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $parts = ipv6ToUint32Parts($value);
+        if ($parts === null) {
+            return ['error' => 'Invalid IPv6 address'];
+        }
+
+        return [
+            'start_ip' => unsigned64ToBiasedSigned($parts[0], $parts[1]),
+            'end_ip' => unsigned64ToBiasedSigned($parts[0], $parts[1]),
+            'start_suffix' => unsigned64ToBiasedSigned($parts[2], $parts[3]),
+            'end_suffix' => unsigned64ToBiasedSigned($parts[2], $parts[3]),
+            'ip_size' => 16
+        ];
     }
 
-    $ipLong = ipToUnsignedLong($value);
-    if ($ipLong === null) {
-        return ['error' => 'Invalid IPv4 address'];
-    }
-
-    return [
-        'start_ip' => $ipLong,
-        'end_ip' => $ipLong,
-        'start_suffix' => 32,
-        'end_suffix' => 32,
-        'ip_size' => 1
-    ];
+    return ['error' => 'Invalid IP address'];
 }
 
 function getDefaultAllowListId($db) {
