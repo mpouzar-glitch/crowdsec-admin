@@ -25,7 +25,8 @@ renderPageStart($appTitle . ' - Whitelist', 'whitelist', $appTitle);
             <p class="muted">
                 Whitelist musí být nejdříve založen v tabulce allow_lists (doporučeno přes <code>cscli allowlist create</code>),
                 následně se přidávají položky a propojí se přes allow_list_allowlist_items.
-                Tím se zajistí konzistence a okamžité použití změn bez restartu CrowdSec.
+                Ukládáme je ve stejném formátu jako <code>cscli</code> (včetně IPv6), takže není potřeba volat další API příkaz
+                a změny se okamžitě projeví v CrowdSec.
             </p>
         </div>
     </section>
