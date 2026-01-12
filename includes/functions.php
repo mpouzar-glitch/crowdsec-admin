@@ -102,3 +102,5 @@ function loadEnv() {
     return $env;
 }
 
+$appEnv = loadEnv();
+date_default_timezone_set($appEnv['TIMEZONE'] ?? 'Europe/Prague');
