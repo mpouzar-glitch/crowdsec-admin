@@ -1144,7 +1144,14 @@ function renderAlerts() {
                 <td>${formatAlertDuration(alert)}</td>
                 <td class="table-filter-link" title="${alert.scenario}" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterScenario" data-filter-value="${alert.scenario}">${scenarioLabel} ${repeatedBadge}</td>
                 <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterMachine" data-filter-value="${alert.machine_id || ''}">${machineLabel}</td>
-                <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterIp" data-filter-value="${alert.source_ip || ''}">${alert.source_ip || '-'}</td>
+                <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterIp" data-filter-value="${alert.source_ip || ''}">
+                    <div class="ip-cell">
+                        <span>${alert.source_ip || '-'}</span>
+                        <button class="icon-btn icon-btn-primary icon-btn-mini" onclick="showIpIntelModal(event, '${alert.source_ip || ''}')" ${ipDisabled ? 'disabled' : ''} aria-label="Info o IP" title="Info o IP">
+                            <i class="fa-solid fa-circle-info"></i>
+                        </button>
+                    </div>
+                </td>
                 <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterCountry" data-filter-value="${alert.source_country || ''}">${flag} ${alert.source_country || '-'}</td>
                 <td>${alert.events_count || 0}</td>
                 <td>
@@ -1317,6 +1324,198 @@ function showAlertModal(alert) {
     `;
 
     modal.classList.add('active');
+}
+
+const ipIntelCache = new Map();
+
+function showIpIntelModal(event, ip) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    if (!ip) return;
+
+    const modal = document.getElementById('ipIntelModal');
+    const detail = document.getElementById('ipIntelDetail');
+    if (!modal || !detail) return;
+
+    detail.innerHTML = `
+        <h3>IP adresa ${ip}</h3>
+        <p class="muted">Načítám informace...</p>
+    `;
+    modal.classList.add('active');
+
+    loadIpIntel(ip);
+}
+
+async function loadIpIntel(ip) {
+    const detail = document.getElementById('ipIntelDetail');
+    if (!detail) return;
+
+    if (ipIntelCache.has(ip)) {
+        detail.innerHTML = ipIntelCache.get(ip);
+        return;
+    }
+
+    try {
+        const whoisPromise = fetch(`https://rdap.org/ip/${encodeURIComponent(ip)}`).then(response => {
+            if (!response.ok) {
+                throw new Error('WHOIS request failed');
+            }
+            return response.json();
+        });
+
+        const ptrName = buildPtrLookupName(ip);
+        const dnsPromise = ptrName
+            ? fetch(`https://dns.google/resolve?name=${encodeURIComponent(ptrName)}&type=PTR`).then(response => {
+                if (!response.ok) {
+                    throw new Error('DNS request failed');
+                }
+                return response.json();
+            })
+            : Promise.resolve(null);
+
+        const [whoisData, dnsData] = await Promise.all([whoisPromise, dnsPromise]);
+
+        const whoisHtml = buildWhoisHtml(whoisData);
+        const dnsHtml = buildDnsHtml(dnsData, ptrName);
+        const rendered = `
+            <h3>IP adresa ${escapeHtml(ip)}</h3>
+            <div class="alert-detail-grid">
+                ${whoisHtml.summary}
+            </div>
+            <h4>WHOIS (RDAP)</h4>
+            ${whoisHtml.details}
+            <h4>DNS (PTR)</h4>
+            ${dnsHtml}
+        `;
+
+        ipIntelCache.set(ip, rendered);
+        detail.innerHTML = rendered;
+    } catch (error) {
+        console.error('Failed to load IP intel:', error);
+        detail.innerHTML = `
+            <h3>IP adresa ${escapeHtml(ip)}</h3>
+            <p class="muted">Nepodařilo se načíst informace o IP adrese.</p>
+        `;
+    }
+}
+
+function buildWhoisHtml(data) {
+    if (!data) {
+        return {
+            summary: '<div class="detail-item"><label>Stav</label><div class="value">WHOIS není dostupný</div></div>',
+            details: '<p class="muted">WHOIS data nejsou k dispozici.</p>'
+        };
+    }
+
+    const orgName = extractRdapOrgName(data.entities);
+    const statusList = Array.isArray(data.status) && data.status.length
+        ? data.status.join(', ')
+        : '-';
+    const range = data.startAddress && data.endAddress
+        ? `${data.startAddress} - ${data.endAddress}`
+        : '-';
+    const country = data.country || '-';
+    const handle = data.handle || '-';
+    const name = data.name || '-';
+    const events = Array.isArray(data.events)
+        ? data.events
+            .map(event => `${event.eventAction || '-'}: ${event.eventDate || '-'}`)
+            .join('<br>')
+        : '-';
+
+    const summary = `
+        <div class="detail-item">
+            <label>Organizace</label>
+            <div class="value">${escapeHtml(orgName)}</div>
+        </div>
+        <div class="detail-item">
+            <label>Rozsah</label>
+            <div class="value">${escapeHtml(range)}</div>
+        </div>
+        <div class="detail-item">
+            <label>Země</label>
+            <div class="value">${escapeHtml(country)}</div>
+        </div>
+        <div class="detail-item">
+            <label>Status</label>
+            <div class="value">${escapeHtml(statusList)}</div>
+        </div>
+    `;
+
+    const details = `
+        <div class="alert-detail-grid">
+            <div class="detail-item">
+                <label>Jméno sítě</label>
+                <div class="value">${escapeHtml(name)}</div>
+            </div>
+            <div class="detail-item">
+                <label>Handle</label>
+                <div class="value">${escapeHtml(handle)}</div>
+            </div>
+            <div class="detail-item">
+                <label>Události</label>
+                <div class="value">${events}</div>
+            </div>
+        </div>
+    `;
+
+    return { summary, details };
+}
+
+function buildDnsHtml(data, ptrName) {
+    if (!ptrName) {
+        return '<p class="muted">PTR záznam nelze zjistit (nepodporovaný formát IP).</p>';
+    }
+
+    if (!data || !Array.isArray(data.Answer) || data.Answer.length === 0) {
+        return '<p class="muted">Nebyl nalezen PTR záznam.</p>';
+    }
+
+    const answers = data.Answer.map(answer => escapeHtml(answer.data || '')).join('<br>');
+    return `
+        <div class="detail-item">
+            <label>${escapeHtml(ptrName)}</label>
+            <div class="value">${answers}</div>
+        </div>
+    `;
+}
+
+function buildPtrLookupName(ip) {
+    if (!ip) return '';
+    if (ip.includes(':')) {
+        return '';
+    }
+    const parts = ip.split('.').filter(Boolean);
+    if (parts.length !== 4) return '';
+    return `${parts.reverse().join('.')}.in-addr.arpa`;
+}
+
+function extractRdapOrgName(entities) {
+    if (!Array.isArray(entities)) return '-';
+    for (const entity of entities) {
+        const vcard = entity?.vcardArray?.[1];
+        if (!Array.isArray(vcard)) continue;
+        const fn = vcard.find(item => Array.isArray(item) && item[0] === 'fn');
+        if (fn && Array.isArray(fn) && fn[3]) {
+            return fn[3];
+        }
+        const org = vcard.find(item => Array.isArray(item) && item[0] === 'org');
+        if (org && Array.isArray(org) && org[3]) {
+            return Array.isArray(org[3]) ? org[3].join(', ') : org[3];
+        }
+    }
+    return '-';
+}
+
+function escapeHtml(value) {
+    return (value ?? '').toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 function refreshAlerts() {

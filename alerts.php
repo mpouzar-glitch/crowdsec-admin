@@ -87,6 +87,13 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
         </div>
     </div>
 
+    <div id="ipIntelModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close">×</button>
+            <div id="ipIntelDetail"></div>
+        </div>
+    </div>
+
     <div id="longTermBanModal" class="modal">
         <div class="modal-content">
             <button class="modal-close">×</button>
