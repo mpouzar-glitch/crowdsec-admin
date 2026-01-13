@@ -162,6 +162,46 @@ function formatAlertDuration(alert) {
     return `start: ${startLabel} trvání ${durationLabel}`;
 }
 
+function formatRemainingDuration(ms) {
+    if (ms <= 0) return '0 min';
+    const totalMinutes = Math.ceil(ms / 60000);
+    if (totalMinutes < 60) return `${totalMinutes} min`;
+    const totalHours = Math.ceil(totalMinutes / 60);
+    if (totalHours < 24) return `${totalHours} h`;
+    const totalDays = Math.ceil(totalHours / 24);
+    return `${totalDays} d`;
+}
+
+function getAlertDecisionEnd(alert) {
+    const decisions = Array.isArray(alert?.decisions) ? alert.decisions : [];
+    const activeDecisions = decisions
+        .filter(decision => decision && !decision.expired && decision.until)
+        .map(decision => parseUtcDate(decision.until))
+        .filter(Boolean)
+        .sort((a, b) => a - b);
+
+    if (activeDecisions.length === 0) {
+        return { label: '-', className: 'decision-until decision-until-none', title: '' };
+    }
+
+    const endDate = activeDecisions[0];
+    const remainingMs = endDate - new Date();
+    let className = 'decision-until decision-until-ok';
+    if (remainingMs <= 0) {
+        className = 'decision-until decision-until-expired';
+    } else if (remainingMs <= 60 * 60 * 1000) {
+        className = 'decision-until decision-until-danger';
+    } else if (remainingMs <= 6 * 60 * 60 * 1000) {
+        className = 'decision-until decision-until-warning';
+    }
+
+    return {
+        label: formatDateTime(endDate),
+        className,
+        title: `Zbývá ${formatRemainingDuration(Math.max(0, remainingMs))}`
+    };
+}
+
 function formatRelativeTime(dateString) {
     const date = parseUtcDate(dateString);
     if (!date) {
@@ -1069,6 +1109,8 @@ function buildAlertQueryParams(filters) {
     if (filters.ip) params.set('ip', filters.ip);
     if (filters.machine) params.set('machine', filters.machine);
     if (filters.country) params.set('country', filters.country);
+    if (alertSortState.key) params.set('sort', alertSortState.key);
+    if (alertSortState.direction) params.set('direction', alertSortState.direction);
     return params;
 }
 
@@ -1103,47 +1145,7 @@ function renderAlerts() {
         );
     });
 
-    const sorted = filtered.sort((a, b) => {
-        const key = alertSortState.key;
-        let aValue = '';
-        let bValue = '';
-        switch (key) {
-            case 'created_at':
-                aValue = parseUtcDate(a.created_at)?.getTime() || 0;
-                bValue = parseUtcDate(b.created_at)?.getTime() || 0;
-                break;
-            case 'scenario':
-                aValue = a.scenario || '';
-                bValue = b.scenario || '';
-                break;
-            case 'machine':
-                aValue = a.machine_id || '';
-                bValue = b.machine_id || '';
-                break;
-            case 'duration':
-                aValue = getAlertDurationMinutes(a) ?? -1;
-                bValue = getAlertDurationMinutes(b) ?? -1;
-                break;
-            case 'source_ip':
-                aValue = a.source_ip || '';
-                bValue = b.source_ip || '';
-                break;
-            case 'source_country':
-                aValue = a.source_country || '';
-                bValue = b.source_country || '';
-                break;
-            case 'events_count':
-                aValue = Number(a.events_count || 0);
-                bValue = Number(b.events_count || 0);
-                break;
-            default:
-                aValue = a.scenario || '';
-                bValue = b.scenario || '';
-        }
-        return compareValues(aValue, bValue, alertSortState.direction);
-    });
-
-    tbody.innerHTML = sorted.map(alert => {
+    tbody.innerHTML = filtered.map(alert => {
         const flag = getCountryFlagHtml(alert.source_country);
         const scenarioLabel = alert.scenario?.split('/').pop() || '';
         const machineLabel = alert.machine_id || '-';
@@ -1151,6 +1153,7 @@ function renderAlerts() {
         const repeatedBadge = isRepeated ? '<span class="badge badge-repeated">Opakovaný</span>' : '';
         const activeDecisions = (alert.decisions || []).filter(decision => !decision.expired);
         const hasActiveDecision = activeDecisions.length > 0;
+        const decisionEnd = getAlertDecisionEnd(alert);
         const banLabel = hasActiveDecision ? 'Unban' : 'Ban';
         const banIcon = hasActiveDecision ? 'fa-unlock' : 'fa-ban';
         const banClass = hasActiveDecision ? 'icon-btn-warning' : 'icon-btn-danger';
@@ -1161,6 +1164,7 @@ function renderAlerts() {
             <tr class="${isRepeated ? 'alert-repeated' : ''}">
                 <td>${formatDateTime(alert.created_at)}</td>
                 <td>${formatAlertDuration(alert)}</td>
+                <td><span class="${decisionEnd.className}" title="${decisionEnd.title}">${decisionEnd.label}</span></td>
                 <td class="table-filter-link" title="${alert.scenario}" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterScenario" data-filter-value="${alert.scenario}">${scenarioLabel} ${repeatedBadge}</td>
                 <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterMachine" data-filter-value="${alert.machine_id || ''}">${machineLabel}</td>
                 <td class="table-filter-link" data-tooltip="Kliknutím přefiltrujete" data-filter-target="alertFilterIp" data-filter-value="${alert.source_ip || ''}">
@@ -2211,7 +2215,7 @@ window.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    initializeSortableTable('alertsTable', alertSortState, renderAlerts);
+    initializeSortableTable('alertsTable', alertSortState, loadAlerts);
     initializeSortableTable('decisionsTable', decisionSortState, renderDecisions);
 });
 

@@ -791,6 +791,42 @@ a {
     height: 32px;
 }
 
+.alerts-table th {
+    font-size: 11px;
+}
+
+.alerts-table td {
+    font-size: 12px;
+}
+
+.alerts-table th,
+.alerts-table td {
+    padding: 0 10px;
+    height: 32px;
+    line-height: 1.1;
+}
+
+.alerts-table .decision-until {
+    font-weight: 600;
+}
+
+.alerts-table .decision-until-ok {
+    color: var(--success);
+}
+
+.alerts-table .decision-until-warning {
+    color: var(--warning);
+}
+
+.alerts-table .decision-until-danger {
+    color: var(--danger);
+}
+
+.alerts-table .decision-until-expired,
+.alerts-table .decision-until-none {
+    color: var(--muted);
+}
+
 .data-table-compact tbody tr:nth-child(even) {
     background: #f8fafc;
 }

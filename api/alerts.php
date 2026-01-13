@@ -100,6 +100,26 @@ function getAlertLimit() {
     return $limit ?: 100;
 }
 
+function getAlertSort() {
+    $allowed = [
+        'created_at' => 'a.created_at',
+        'duration' => 'duration_seconds',
+        'scenario' => 'a.scenario',
+        'machine' => 'm.machine_id',
+        'source_ip' => 'a.source_ip',
+        'source_country' => 'a.source_country',
+        'events_count' => 'a.events_count',
+        'decision_until' => 'decision_until'
+    ];
+
+    $key = trim((string) ($_GET['sort'] ?? 'created_at'));
+    $directionRaw = strtolower(trim((string) ($_GET['direction'] ?? 'desc')));
+    $direction = $directionRaw === 'asc' ? 'ASC' : 'DESC';
+    $orderBy = $allowed[$key] ?? $allowed['created_at'];
+
+    return [$orderBy, $direction];
+}
+
 function decodeEventSerialized($serialized) {
     if ($serialized === null || $serialized === '') {
         return [];
@@ -231,6 +251,7 @@ try {
         [$whereSql, $params] = buildAlertFilters($since);
         $limit = getAlertLimit();
         $limitSql = $limit ? 'LIMIT ' . (int) $limit : '';
+        [$orderBy, $direction] = getAlertSort();
         $stmt = $db->prepare("
             SELECT 
                 a.id,
@@ -248,6 +269,11 @@ try {
                 a.simulated,
                 m.machine_id as machine_id,
                 COUNT(d.id) as decisions_count,
+                MAX(d.until) as decision_until,
+                CASE
+                    WHEN a.started_at IS NULL OR a.stopped_at IS NULL THEN NULL
+                    ELSE TIMESTAMPDIFF(SECOND, a.started_at, a.stopped_at)
+                END as duration_seconds,
                 CASE WHEN repeated.scenario IS NULL THEN 0 ELSE 1 END as is_repeated
             FROM alerts a
             LEFT JOIN decisions d ON d.alert_decisions = a.id
@@ -264,7 +290,7 @@ try {
                 AND repeated.source_ip = a.source_ip
             {$whereSql}
             GROUP BY a.id
-            ORDER BY a.created_at DESC
+            ORDER BY {$orderBy} {$direction}, a.created_at DESC
             {$limitSql}
         ");
 
