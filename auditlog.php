@@ -198,7 +198,7 @@ renderPageStart($appTitle . ' - Audit Log', 'audit', $appTitle);
 
     <section class="card">
         <div class="card-body">
-            <table class="data-table">
+            <table class="data-table audit-log-table">
                 <thead>
                     <tr>
                         <th>Čas</th>
@@ -220,7 +220,7 @@ renderPageStart($appTitle . ' - Audit Log', 'audit', $appTitle);
                                 <td><?= htmlspecialchars(date('d.m.Y H:i:s', strtotime($entry['timestamp']))) ?></td>
                                 <td><?= htmlspecialchars($entry['user']) ?></td>
                                 <td>
-                                    <span class="audit-action <?= htmlspecialchars($actionMeta['class']) ?>">
+                                    <span class="audit-action-text <?= htmlspecialchars($actionMeta['class']) ?>">
                                         <i class="fas <?= htmlspecialchars($actionMeta['icon']) ?>"></i>
                                         <?= htmlspecialchars($entry['action']) ?>
                                     </span>
