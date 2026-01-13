@@ -313,35 +313,29 @@ a {
     flex-wrap: wrap;
 }
 
-.audit-action {
+.audit-action-text {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 999px;
+    gap: 6px;
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
 
-.audit-action.info {
-    background: rgba(59, 130, 246, 0.12);
+.audit-action-text.info {
     color: #1d4ed8;
 }
 
-.audit-action.success {
-    background: rgba(22, 163, 74, 0.12);
+.audit-action-text.success {
     color: #15803d;
 }
 
-.audit-action.warning {
-    background: rgba(245, 158, 11, 0.16);
+.audit-action-text.warning {
     color: #b45309;
 }
 
-.audit-action.danger {
-    background: rgba(239, 68, 68, 0.16);
+.audit-action-text.danger {
     color: #b91c1c;
 }
 
@@ -395,6 +389,15 @@ a {
     font-size: 12px;
     color: #334155;
     white-space: pre-wrap;
+}
+
+.audit-log-table th,
+.audit-log-table td {
+    font-size: 12px;
+}
+
+.audit-log-table tbody tr {
+    height: 32px;
 }
 
 .page-header h1 {
@@ -544,6 +547,23 @@ a {
     font-size: 13px;
 }
 
+.input-with-icon {
+    position: relative;
+}
+
+.input-with-icon i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.input-with-icon input {
+    padding-left: 28px;
+}
+
 .filter-group.checkbox label {
     text-transform: none;
     letter-spacing: normal;
@@ -557,6 +577,68 @@ a {
 .filter-actions {
     display: flex;
     align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.audit-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 14px 4px 12px;
+    color: var(--muted);
+    font-size: 13px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.audit-toolbar strong {
+    color: var(--text);
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+
+.pagination-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: #f8fafc;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.pagination-link:hover {
+    background: #e2e8f0;
+}
+
+.pagination-link.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+
+.pagination-link.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pagination-ellipsis {
+    color: var(--muted);
+    font-weight: 600;
+    padding: 0 4px;
 }
 
 .input-group {
