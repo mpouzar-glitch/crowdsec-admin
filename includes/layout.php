@@ -1,14 +1,38 @@
 <?php
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../config/database.php';
+
+function fetchMenuBadgeCounts() {
+    $counts = [
+        'alerts' => null,
+        'decisions' => null
+    ];
+
+    try {
+        $conn = Database::getInstance()->getConnection();
+
+        $alertStmt = $conn->query('SELECT COUNT(*) FROM alerts');
+        $counts['alerts'] = (int) $alertStmt->fetchColumn();
+
+        $decisionStmt = $conn->prepare('SELECT COUNT(*) FROM decisions WHERE `until` IS NULL OR `until` >= NOW()');
+        $decisionStmt->execute();
+        $counts['decisions'] = (int) $decisionStmt->fetchColumn();
+    } catch (Exception $e) {
+        error_log('Menu badge counts unavailable: ' . $e->getMessage());
+    }
+
+    return $counts;
+}
 
 function renderPageStart($pageTitle, $activeMenu, $appTitle = 'CrowdSec Admin') {
     $user = getCurrentUser();
     $username = $user['username'] ?? 'unknown';
+    $menuCounts = fetchMenuBadgeCounts();
     $menuItems = [
         'dashboard' => ['label' => 'Dashboard', 'href' => '/index.php', 'icon' => 'fa-chart-line'],
-        'alerts' => ['label' => 'Alerts', 'href' => '/alerts.php', 'icon' => 'fa-bell'],
+        'alerts' => ['label' => 'Alerts', 'href' => '/alerts.php', 'icon' => 'fa-bell', 'pill' => $menuCounts['alerts'], 'pill_class' => 'pill-alerts'],
         'machines' => ['label' => 'Machines', 'href' => '/machines.php', 'icon' => 'fa-server'],
-        'decisions' => ['label' => 'Decisions', 'href' => '/decisions.php', 'icon' => 'fa-gavel'],
+        'decisions' => ['label' => 'Decisions', 'href' => '/decisions.php', 'icon' => 'fa-gavel', 'pill' => $menuCounts['decisions'], 'pill_class' => 'pill-decisions'],
         'whitelist' => ['label' => 'Whitelist', 'href' => '/whitelist.php', 'icon' => 'fa-check-circle'],
         'audit' => ['label' => 'Audit Log', 'href' => '/auditlog.php', 'icon' => 'fa-clipboard-list']
     ];
@@ -44,7 +68,13 @@ function renderPageStart($pageTitle, $activeMenu, $appTitle = 'CrowdSec Admin') 
     foreach ($menuItems as $key => $item) {
         $activeClass = $key === $activeMenu ? 'active' : '';
         $icon = $item['icon'] ?? 'fa-circle';
-        echo "                    <a class=\"nav-item {$activeClass}\" href=\"{$item['href']}\"><i class=\"fas {$icon}\"></i>{$item['label']}</a>\n";
+        $pill = isset($item['pill']) ? (int) $item['pill'] : null;
+        $pillClass = $item['pill_class'] ?? '';
+        $pillMarkup = '';
+        if ($pill !== null) {
+            $pillMarkup = "<span class=\"nav-pill {$pillClass}\">{$pill}</span>";
+        }
+        echo "                    <a class=\"nav-item {$activeClass}\" href=\"{$item['href']}\"><i class=\"fas {$icon}\"></i><span>{$item['label']}</span>{$pillMarkup}</a>\n";
     }
     echo "                    <div class=\"nav-user\">\n";
     echo "                        <span class=\"user-name\">{$username}</span>\n";
