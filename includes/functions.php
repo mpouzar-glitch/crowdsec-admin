@@ -45,6 +45,112 @@ function parseGoDuration($str) {
     return $totalMs;
 }
 
+function formatDateTime($value, $fallback = '-') {
+    if (!$value) {
+        return $fallback;
+    }
+
+    $timestamp = is_numeric($value) ? (int) $value : strtotime((string) $value);
+    if (!$timestamp) {
+        return $fallback;
+    }
+
+    return date('d.m.Y H:i', $timestamp);
+}
+
+function formatTime($value, $fallback = '-') {
+    if (!$value) {
+        return $fallback;
+    }
+
+    $timestamp = is_numeric($value) ? (int) $value : strtotime((string) $value);
+    if (!$timestamp) {
+        return $fallback;
+    }
+
+    return date('H:i', $timestamp);
+}
+
+function formatAlertDuration($startedAt, $stoppedAt) {
+    if (!$startedAt) {
+        return '-';
+    }
+
+    $startLabel = formatTime($startedAt);
+    if ($startLabel === '-') {
+        return '-';
+    }
+
+    if (!$stoppedAt) {
+        return "start: {$startLabel} trvání -";
+    }
+
+    $start = strtotime((string) $startedAt);
+    $stop = strtotime((string) $stoppedAt);
+    if (!$start || !$stop || $stop < $start) {
+        return "start: {$startLabel} trvání -";
+    }
+
+    $minutes = (int) round(($stop - $start) / 60);
+    if ($minutes <= 0) {
+        $minutes = 1;
+    }
+
+    if ($minutes >= 60) {
+        $hours = (int) max(1, round($minutes / 60));
+        return "start: {$startLabel} trvání {$hours} hod";
+    }
+
+    return "start: {$startLabel} trvání {$minutes} min";
+}
+
+function buildPaginationPages($current, $total) {
+    if ($total <= 7) {
+        return range(1, $total);
+    }
+
+    $pages = [1];
+    $start = max(2, $current - 2);
+    $end = min($total - 1, $current + 2);
+
+    if ($start > 2) {
+        $pages[] = '...';
+    }
+
+    for ($page = $start; $page <= $end; $page++) {
+        $pages[] = $page;
+    }
+
+    if ($end < $total - 1) {
+        $pages[] = '...';
+    }
+
+    $pages[] = $total;
+    return $pages;
+}
+
+function setFlashMessage($type, $message) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    $_SESSION['flash_message'] = [
+        'type' => $type,
+        'message' => $message
+    ];
+}
+
+function getFlashMessage() {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    if (!isset($_SESSION['flash_message'])) {
+        return null;
+    }
+    $message = $_SESSION['flash_message'];
+    unset($_SESSION['flash_message']);
+    return $message;
+}
+
 function getAlertTarget($alert) {
     if (!$alert) return "Unknown";
     
