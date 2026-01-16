@@ -129,6 +129,321 @@ function buildPaginationPages($current, $total) {
     return $pages;
 }
 
+function renderPagination(array $options = []) {
+    $current = (int) ($options['current'] ?? 1);
+    $total = (int) ($options['total'] ?? 1);
+    $buildQuery = $options['buildQuery'] ?? null;
+    $baseUrl = $options['baseUrl'] ?? '';
+    $ariaLabel = $options['ariaLabel'] ?? 'Stránkování';
+    $prevLabel = $options['prevLabel'] ?? 'Předchozí';
+    $nextLabel = $options['nextLabel'] ?? 'Další';
+    $prevIcon = $options['prevIcon'] ?? 'fa-chevron-left';
+    $nextIcon = $options['nextIcon'] ?? 'fa-chevron-right';
+
+    if ($total <= 1) {
+        return '';
+    }
+
+    $buildHref = function ($pageNumber) use ($buildQuery, $baseUrl) {
+        $query = '';
+        if (is_callable($buildQuery)) {
+            $query = $buildQuery(['page' => $pageNumber]);
+        } else {
+            $query = http_build_query(['page' => $pageNumber]);
+        }
+
+        if ($baseUrl === '') {
+            return '?' . $query;
+        }
+
+        $base = rtrim($baseUrl, '?');
+        return $base . '?' . $query;
+    };
+
+    $html = '<nav class="pagination" aria-label="' . htmlspecialchars($ariaLabel) . '">' . "\n";
+
+    if ($current > 1) {
+        $html .= '    <a class="pagination-link" href="' . htmlspecialchars($buildHref($current - 1)) . '">';
+        $html .= '<i class="fas ' . htmlspecialchars($prevIcon) . '"></i> ' . htmlspecialchars($prevLabel) . '</a>' . "\n";
+    } else {
+        $html .= '    <span class="pagination-link disabled"><i class="fas ' . htmlspecialchars($prevIcon) . '"></i> ';
+        $html .= htmlspecialchars($prevLabel) . '</span>' . "\n";
+    }
+
+    foreach (buildPaginationPages($current, $total) as $pageNumber) {
+        if ($pageNumber === '...') {
+            $html .= '    <span class="pagination-ellipsis">…</span>' . "\n";
+            continue;
+        }
+
+        if ((int) $pageNumber === $current) {
+            $html .= '    <span class="pagination-link active">' . htmlspecialchars((string) $pageNumber) . '</span>' . "\n";
+            continue;
+        }
+
+        $html .= '    <a class="pagination-link" href="' . htmlspecialchars($buildHref($pageNumber)) . '">';
+        $html .= htmlspecialchars((string) $pageNumber) . '</a>' . "\n";
+    }
+
+    if ($current < $total) {
+        $html .= '    <a class="pagination-link" href="' . htmlspecialchars($buildHref($current + 1)) . '">';
+        $html .= htmlspecialchars($nextLabel) . ' <i class="fas ' . htmlspecialchars($nextIcon) . '"></i></a>' . "\n";
+    } else {
+        $html .= '    <span class="pagination-link disabled">';
+        $html .= htmlspecialchars($nextLabel) . ' <i class="fas ' . htmlspecialchars($nextIcon) . '"></i></span>' . "\n";
+    }
+
+    $html .= '</nav>' . "\n";
+    return $html;
+}
+
+function renderMessagesTableHeader(array $options = []) {
+    $sort = $options['sort'] ?? '';
+    $buildSortLink = $options['buildSortLink'] ?? null;
+    $getSortIcon = $options['getSortIcon'] ?? null;
+    $columns = $options['columns'] ?? [
+        'timestamp',
+        'sender',
+        'recipients',
+        'subject',
+        'action',
+        'score',
+        'size_bytes',
+        'status',
+        'ip_address',
+        'hostname',
+    ];
+
+    $columnDefinitions = [
+        'timestamp' => [
+            'label' => __('time'),
+            'class' => 'col-timestamp',
+            'sort' => 'timestamp',
+        ],
+        'sender' => [
+            'label' => __('msg_sender'),
+            'class' => 'col-email',
+            'sort' => 'sender',
+        ],
+        'recipients' => [
+            'label' => __('msg_recipient'),
+            'class' => 'col-email',
+            'sort' => 'recipients',
+        ],
+        'subject' => [
+            'label' => __('msg_subject'),
+            'class' => 'col-subject',
+            'sort' => 'subject',
+        ],
+        'action' => [
+            'label' => __('action'),
+            'class' => 'col-action',
+            'sort' => 'action',
+        ],
+        'score' => [
+            'label' => __('msg_score'),
+            'class' => 'col-score',
+            'sort' => 'score',
+        ],
+        'size_bytes' => [
+            'label' => __('msg_size'),
+            'class' => 'col-size',
+            'sort' => 'size_bytes',
+        ],
+        'size' => [
+            'label' => __('size'),
+            'class' => 'col-size',
+            'sort' => 'size',
+        ],
+        'status' => [
+            'label' => 'STATUS',
+            'style' => 'width: 180px;',
+        ],
+        'ip_address' => [
+            'label' => __('ip_address'),
+            'class' => 'col-ip',
+            'sort' => 'ip_address',
+        ],
+        'hostname' => [
+            'label' => __('hostname'),
+            'class' => 'col-hostname',
+            'sort' => 'hostname',
+        ],
+        'actions' => [
+            'label' => __('actions'),
+            'style' => 'width: 150px;',
+        ],
+    ];
+
+    $header = "<thead>\n    <tr>\n";
+
+    foreach ($columns as $column) {
+        $columnConfig = [];
+        if (is_string($column)) {
+            $columnConfig = $columnDefinitions[$column] ?? [];
+            $columnConfig['key'] = $column;
+        } elseif (is_array($column)) {
+            $columnKey = $column['key'] ?? null;
+            $columnConfig = array_merge($columnDefinitions[$columnKey] ?? [], $column);
+            $columnConfig['key'] = $columnKey;
+        }
+
+        if (empty($columnConfig['key'])) {
+            continue;
+        }
+
+        $label = $columnConfig['label'] ?? $columnConfig['key'];
+        $class = $columnConfig['class'] ?? '';
+        $style = $columnConfig['style'] ?? '';
+        $sortKey = $columnConfig['sort'] ?? null;
+        $sortable = $columnConfig['sortable'] ?? true;
+
+        $attributes = '';
+        if (!empty($class)) {
+            $attributes .= ' class="' . htmlspecialchars($class) . '"';
+        }
+        if (!empty($style)) {
+            $attributes .= ' style="' . htmlspecialchars($style) . '"';
+        }
+
+        if ($sortable && $sortKey && is_callable($buildSortLink) && is_callable($getSortIcon)) {
+            $isActive = ($sort === $sortKey);
+            $header .= "        <th{$attributes}>\n";
+            $header .= "            <a class=\"sort-link " . ($isActive ? 'active' : '') . "\" href=\""
+                . htmlspecialchars($buildSortLink($sortKey)) . "\">\n";
+            $header .= "                " . htmlspecialchars($label) . "\n";
+            $header .= "                <i class=\"fas " . htmlspecialchars($getSortIcon($sortKey)) . "\"></i>\n";
+            $header .= "            </a>\n";
+            $header .= "        </th>\n";
+        } else {
+            $header .= "        <th{$attributes}>" . htmlspecialchars($label) . "</th>\n";
+        }
+    }
+
+    $header .= "    </tr>\n</thead>\n";
+
+    return $header;
+}
+
+function renderFilterForm(array $options = []) {
+    $method = strtolower($options['method'] ?? 'get');
+    $action = $options['action'] ?? '';
+    $class = $options['class'] ?? 'table-filters';
+    $fields = $options['fields'] ?? [];
+    $submitLabel = $options['submitLabel'] ?? 'Filtrovat';
+    $resetLabel = $options['resetLabel'] ?? 'Vyčistit filtry';
+    $resetUrl = $options['resetUrl'] ?? null;
+
+    $attributes = ' method="' . htmlspecialchars($method) . '"';
+    if ($action !== '') {
+        $attributes .= ' action="' . htmlspecialchars($action) . '"';
+    }
+    if ($class !== '') {
+        $attributes .= ' class="' . htmlspecialchars($class) . '"';
+    }
+
+    $html = '<form' . $attributes . '>' . "\n";
+
+    foreach ($fields as $field) {
+        if (!is_array($field)) {
+            continue;
+        }
+
+        $type = $field['type'] ?? 'text';
+        $name = $field['name'] ?? '';
+        if ($name === '') {
+            continue;
+        }
+
+        if ($type === 'hidden') {
+            $value = $field['value'] ?? '';
+            $html .= '    <input type="hidden" name="' . htmlspecialchars($name) . '" value="' . htmlspecialchars((string) $value) . '">' . "\n";
+            continue;
+        }
+
+        $id = $field['id'] ?? $name;
+        $value = $field['value'] ?? '';
+        $placeholder = $field['placeholder'] ?? '';
+        $label = $field['label'] ?? '';
+        $labelHtml = $field['labelHtml'] ?? null;
+        $groupClass = $field['groupClass'] ?? 'filter-group';
+        $inputClass = $field['class'] ?? '';
+        $datalist = $field['datalist'] ?? [];
+
+        if ($type === 'checkbox') {
+            $groupClass .= ' checkbox';
+        }
+
+        $html .= '    <div class="' . htmlspecialchars($groupClass) . '">' . "\n";
+        if ($labelHtml !== null) {
+            $html .= '        <label for="' . htmlspecialchars($id) . '">' . $labelHtml . '</label>' . "\n";
+        } elseif ($label !== '') {
+            $html .= '        <label for="' . htmlspecialchars($id) . '">' . htmlspecialchars($label) . '</label>' . "\n";
+        }
+
+        if ($type === 'select') {
+            $html .= '        <select id="' . htmlspecialchars($id) . '" name="' . htmlspecialchars($name) . '"';
+            if ($inputClass !== '') {
+                $html .= ' class="' . htmlspecialchars($inputClass) . '"';
+            }
+            $html .= '>' . "\n";
+            foreach (($field['options'] ?? []) as $optionValue => $optionLabel) {
+                $optionData = $optionLabel;
+                if (is_array($optionLabel)) {
+                    $optionData = $optionLabel['label'] ?? $optionLabel['value'] ?? $optionValue;
+                    $optionValue = $optionLabel['value'] ?? $optionValue;
+                }
+                $selected = ((string) $optionValue === (string) $value) ? ' selected' : '';
+                $html .= '            <option value="' . htmlspecialchars((string) $optionValue) . '"' . $selected . '>';
+                $html .= htmlspecialchars((string) $optionData) . '</option>' . "\n";
+            }
+            $html .= "        </select>\n";
+        } else {
+            $html .= '        <input type="' . htmlspecialchars($type) . '" id="' . htmlspecialchars($id) . '" name="' . htmlspecialchars($name) . '"';
+            if ($placeholder !== '') {
+                $html .= ' placeholder="' . htmlspecialchars($placeholder) . '"';
+            }
+            if ($inputClass !== '') {
+                $html .= ' class="' . htmlspecialchars($inputClass) . '"';
+            }
+            if ($type === 'checkbox') {
+                $checkboxValue = $field['value'] ?? '1';
+                $html .= ' value="' . htmlspecialchars((string) $checkboxValue) . '"';
+                $checked = !empty($field['checked']) ? ' checked' : '';
+                $html .= $checked;
+            } else {
+                $html .= ' value="' . htmlspecialchars((string) $value) . '"';
+            }
+            if (!empty($datalist)) {
+                $listId = $field['listId'] ?? ($id . 'List');
+                $html .= ' list="' . htmlspecialchars($listId) . '"';
+            }
+            $html .= '>' . "\n";
+
+            if (!empty($datalist)) {
+                $listId = $field['listId'] ?? ($id . 'List');
+                $html .= '        <datalist id="' . htmlspecialchars($listId) . '">' . "\n";
+                foreach ($datalist as $item) {
+                    $html .= '            <option value="' . htmlspecialchars((string) $item) . '"></option>' . "\n";
+                }
+                $html .= "        </datalist>\n";
+            }
+        }
+
+        $html .= "    </div>\n";
+    }
+
+    $html .= '    <div class="filter-actions">' . "\n";
+    $html .= '        <button class="btn btn-ghost" type="submit">' . htmlspecialchars($submitLabel) . '</button>' . "\n";
+    if ($resetUrl !== null) {
+        $html .= '        <a class="btn btn-ghost" href="' . htmlspecialchars($resetUrl) . '">' . htmlspecialchars($resetLabel) . '</a>' . "\n";
+    }
+    $html .= "    </div>\n";
+    $html .= "</form>\n";
+
+    return $html;
+}
+
 function setFlashMessage($type, $message) {
     if (session_status() !== PHP_SESSION_ACTIVE) {
         session_start();

@@ -182,40 +182,58 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
         </div>
     </section>
 
-    <form class="table-filters" method="get">
-        <div class="filter-group">
-            <label for="alertFilterScenario"><i class="fa-solid fa-layer-group"></i> Scénář</label>
-            <input type="text" id="alertFilterScenario" name="scenario" placeholder="např. ssh-bf" value="<?= htmlspecialchars($filters['scenario']) ?>">
-        </div>
-        <div class="filter-group">
-            <label for="alertFilterIp"><i class="fa-solid fa-network-wired"></i> IP adresa</label>
-            <input type="text" id="alertFilterIp" name="ip" placeholder="např. 192.168.1.1" value="<?= htmlspecialchars($filters['ip']) ?>">
-        </div>
-        <div class="filter-group">
-            <label for="alertFilterCountry"><i class="fa-solid fa-flag"></i> Země</label>
-            <input type="text" id="alertFilterCountry" name="country" placeholder="např. CZ" value="<?= htmlspecialchars($filters['country']) ?>">
-        </div>
-        <div class="filter-group">
-            <label for="alertFilterDateFrom"><i class="fa-solid fa-calendar"></i> Datum od</label>
-            <input type="date" id="alertFilterDateFrom" name="date_from" value="<?= htmlspecialchars($filters['date_from']) ?>">
-        </div>
-        <div class="filter-group">
-            <label for="alertFilterDateTo"><i class="fa-solid fa-calendar"></i> Datum do</label>
-            <input type="date" id="alertFilterDateTo" name="date_to" value="<?= htmlspecialchars($filters['date_to']) ?>">
-        </div>
-        <div class="filter-group">
-            <label for="alertFilterSimulated"><i class="fa-solid fa-flask"></i> Simulované</label>
-            <select id="alertFilterSimulated" name="simulated">
-                <option value="">Všechny</option>
-                <option value="1" <?= $filters['simulated'] === '1' ? 'selected' : '' ?>>Ano</option>
-                <option value="0" <?= $filters['simulated'] === '0' ? 'selected' : '' ?>>Ne</option>
-            </select>
-        </div>
-        <div class="filter-actions">
-            <button class="btn btn-ghost" type="submit">Filtrovat</button>
-            <a class="btn btn-ghost" href="/alerts.php">Vyčistit filtry</a>
-        </div>
-    </form>
+    <?= renderFilterForm([
+        'resetUrl' => '/alerts.php',
+        'fields' => [
+            [
+                'name' => 'scenario',
+                'id' => 'alertFilterScenario',
+                'labelHtml' => '<i class="fa-solid fa-layer-group"></i> Scénář',
+                'placeholder' => 'např. ssh-bf',
+                'value' => $filters['scenario'],
+            ],
+            [
+                'name' => 'ip',
+                'id' => 'alertFilterIp',
+                'labelHtml' => '<i class="fa-solid fa-network-wired"></i> IP adresa',
+                'placeholder' => 'např. 192.168.1.1',
+                'value' => $filters['ip'],
+            ],
+            [
+                'name' => 'country',
+                'id' => 'alertFilterCountry',
+                'labelHtml' => '<i class="fa-solid fa-flag"></i> Země',
+                'placeholder' => 'např. CZ',
+                'value' => $filters['country'],
+            ],
+            [
+                'type' => 'date',
+                'name' => 'date_from',
+                'id' => 'alertFilterDateFrom',
+                'labelHtml' => '<i class="fa-solid fa-calendar"></i> Datum od',
+                'value' => $filters['date_from'],
+            ],
+            [
+                'type' => 'date',
+                'name' => 'date_to',
+                'id' => 'alertFilterDateTo',
+                'labelHtml' => '<i class="fa-solid fa-calendar"></i> Datum do',
+                'value' => $filters['date_to'],
+            ],
+            [
+                'type' => 'select',
+                'name' => 'simulated',
+                'id' => 'alertFilterSimulated',
+                'labelHtml' => '<i class="fa-solid fa-flask"></i> Simulované',
+                'options' => [
+                    '' => 'Všechny',
+                    '1' => 'Ano',
+                    '0' => 'Ne',
+                ],
+                'value' => $filters['simulated'],
+            ],
+        ],
+    ]) ?>
 
     <section class="card">
         <div class="card-body">
@@ -256,25 +274,11 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
         </div>
     </section>
 
-    <?php if ($totalPages > 1): ?>
-        <div class="pagination">
-            <?php
-                $pages = buildPaginationPages($page, $totalPages);
-                $prevPage = max(1, $page - 1);
-                $nextPage = min($totalPages, $page + 1);
-            ?>
-            <a class="pagination-link <?= $page === 1 ? 'disabled' : '' ?>" href="/alerts.php?<?= htmlspecialchars($buildQuery(['page' => $prevPage])) ?>">&laquo; Předchozí</a>
-            <?php foreach ($pages as $pageNumber): ?>
-                <?php if ($pageNumber === '...'): ?>
-                    <span class="pagination-ellipsis">…</span>
-                <?php else: ?>
-                    <a class="pagination-link <?= (int) $pageNumber === $page ? 'active' : '' ?>" href="/alerts.php?<?= htmlspecialchars($buildQuery(['page' => $pageNumber])) ?>">
-                        <?= $pageNumber ?>
-                    </a>
-                <?php endif; ?>
-            <?php endforeach; ?>
-            <a class="pagination-link <?= $page === $totalPages ? 'disabled' : '' ?>" href="/alerts.php?<?= htmlspecialchars($buildQuery(['page' => $nextPage])) ?>">Další &raquo;</a>
-        </div>
-    <?php endif; ?>
+    <?= renderPagination([
+        'current' => $page,
+        'total' => $totalPages,
+        'buildQuery' => $buildQuery,
+        'baseUrl' => '/alerts.php',
+    ]) ?>
 <?php
 renderPageEnd();
