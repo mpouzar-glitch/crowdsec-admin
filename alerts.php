@@ -103,6 +103,7 @@ if (!empty($whereConditions)) {
 $alerts = [];
 $totalItems = 0;
 $totalPages = 1;
+$activeDecisions = [];
 $stats = [
     'total_alerts' => 0,
     'unique_ips' => 0,
@@ -135,6 +136,28 @@ try {
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
     $alerts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $activeDecisions = [];
+    if (!empty($alerts)) {
+        $alertIds = array_map('intval', array_column($alerts, 'id'));
+        $placeholders = implode(',', array_fill(0, count($alertIds), '?'));
+        $decisionStmt = $db->prepare("
+            SELECT id, alert_decisions, `until`
+            FROM decisions
+            WHERE alert_decisions IN ($placeholders)
+              AND `until` > NOW()
+            ORDER BY `until` DESC
+        ");
+        $decisionStmt->execute($alertIds);
+        $decisions = $decisionStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($decisions as $decision) {
+            $alertId = (int) $decision['alert_decisions'];
+            if (!isset($activeDecisions[$alertId])) {
+                $activeDecisions[$alertId] = (int) $decision['id'];
+            }
+        }
+    }
 
     $statsSql = "SELECT
         COUNT(*) as total_alerts,
@@ -256,7 +279,18 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                         <tr><td colspan="9" class="muted">Žádná data</td></tr>
                     <?php else: ?>
                         <?php foreach ($alerts as $alert): ?>
-                            <tr>
+                            <?php
+                            $alertId = (int) $alert['id'];
+                            $sourceIp = (string) ($alert['source_ip'] ?? '');
+                            $decisionId = $activeDecisions[$alertId] ?? null;
+                            $hasDecision = $decisionId !== null;
+                            $banLabel = $hasDecision ? 'Odebrat ban' : 'Ban';
+                            $banClass = $hasDecision ? 'icon-btn-warning' : 'icon-btn-danger';
+                            $banIcon = $hasDecision ? 'fa-unlock' : 'fa-ban';
+                            $ipDisabled = $sourceIp === '';
+                            $extendDisabled = !$hasDecision;
+                            ?>
+                            <tr data-alert-id="<?= $alertId ?>" data-decision-id="<?= $decisionId ? (int) $decisionId : '' ?>" data-source-ip="<?= htmlspecialchars($sourceIp, ENT_QUOTES) ?>">
                                 <td><?= htmlspecialchars(formatDateTime($alert['created_at'])) ?></td>
                                 <td><?= htmlspecialchars($alert['started_at'] ? formatDateTime($alert['started_at']) : '-') ?></td>
                                 <td><?= htmlspecialchars($alert['stopped_at'] ? formatDateTime($alert['stopped_at']) : '-') ?></td>
@@ -265,7 +299,22 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                                 <td><?= htmlspecialchars((string) ($alert['source_country'] ?? '-')) ?></td>
                                 <td><?= (int) $alert['events_count'] ?></td>
                                 <td><?= (int) $alert['simulated'] === 1 ? 'Ano' : 'Ne' ?></td>
-                                <td><a class="btn btn-ghost btn-small" href="/api/alerts?id=<?= urlencode((string) $alert['id']) ?>" target="_blank" rel="noopener">Detail</a></td>
+                                <td>
+                                    <div class="table-actions">
+                                        <button class="icon-btn icon-btn-primary" onclick="viewAlert(<?= $alertId ?>)" aria-label="Detail" title="Detail">
+                                            <i class="fa-solid fa-eye"></i>
+                                        </button>
+                                        <button class="icon-btn <?= $banClass ?>" onclick="toggleAlertDecision(<?= $alertId ?>)" <?= $ipDisabled ? 'disabled' : '' ?> aria-label="<?= htmlspecialchars($banLabel) ?>" title="<?= htmlspecialchars($banLabel) ?>">
+                                            <i class="fa-solid <?= $banIcon ?>"></i>
+                                        </button>
+                                        <button class="icon-btn icon-btn-primary" onclick="extendAlertDecision(<?= $alertId ?>)" <?= $extendDisabled ? 'disabled' : '' ?> aria-label="Prodloužit ban" title="Prodloužit ban">
+                                            <i class="fa-solid fa-clock"></i>
+                                        </button>
+                                        <button class="icon-btn icon-btn-success" onclick="addAlertIpToWhitelist('<?= htmlspecialchars($sourceIp, ENT_QUOTES) ?>')" <?= $ipDisabled ? 'disabled' : '' ?> aria-label="Whitelist" title="Whitelist">
+                                            <i class="fa-solid fa-shield"></i>
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -273,6 +322,140 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
             </table>
         </div>
     </section>
+
+    <script>
+        const alertDecisionDefaults = {
+            banDuration: '4h',
+            extendDuration: '4h'
+        };
+
+        function getAlertRow(alertId) {
+            return document.querySelector(`tr[data-alert-id="${alertId}"]`);
+        }
+
+        function viewAlert(alertId) {
+            const url = `/api/alerts?id=${encodeURIComponent(alertId)}`;
+            window.open(url, '_blank', 'noopener');
+        }
+
+        async function toggleAlertDecision(alertId) {
+            const row = getAlertRow(alertId);
+            if (!row) {
+                return;
+            }
+
+            const decisionId = row.dataset.decisionId;
+            const sourceIp = row.dataset.sourceIp;
+
+            try {
+                if (decisionId) {
+                    if (!confirm('Opravdu chcete odebrat ban?')) {
+                        return;
+                    }
+                    const response = await fetch(`/api/decisions/${decisionId}`, {
+                        method: 'DELETE'
+                    });
+                    if (!response.ok) {
+                        throw new Error('Ban removal failed.');
+                    }
+                } else {
+                    if (!sourceIp) {
+                        return;
+                    }
+                    if (!confirm('Opravdu chcete přidat ban?')) {
+                        return;
+                    }
+                    const response = await fetch('/api/decisions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            ip: sourceIp,
+                            duration: alertDecisionDefaults.banDuration,
+                            reason: 'manual',
+                            type: 'ban'
+                        })
+                    });
+                    if (!response.ok) {
+                        throw new Error('Ban creation failed.');
+                    }
+                }
+
+                window.location.reload();
+            } catch (error) {
+                alert('Nepodařilo se změnit ban.');
+            }
+        }
+
+        async function extendAlertDecision(alertId) {
+            const row = getAlertRow(alertId);
+            if (!row) {
+                return;
+            }
+
+            const sourceIp = row.dataset.sourceIp;
+            if (!sourceIp) {
+                return;
+            }
+
+            if (!confirm('Opravdu chcete prodloužit ban?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/decisions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ip: sourceIp,
+                        duration: alertDecisionDefaults.extendDuration,
+                        reason: 'extend',
+                        type: 'ban'
+                    })
+                });
+                if (!response.ok) {
+                    throw new Error('Ban extend failed.');
+                }
+
+                window.location.reload();
+            } catch (error) {
+                alert('Nepodařilo se prodloužit ban.');
+            }
+        }
+
+        async function addAlertIpToWhitelist(ip) {
+            if (!ip) {
+                return;
+            }
+
+            if (!confirm('Opravdu chcete přidat IP do whitelistu?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/whitelist', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        cidr: ip,
+                        reason: 'manual'
+                    })
+                });
+                if (!response.ok) {
+                    throw new Error('Whitelist add failed.');
+                }
+
+                window.location.reload();
+            } catch (error) {
+                alert('Nepodařilo se přidat IP do whitelistu.');
+            }
+        }
+    </script>
 
     <?= renderPagination([
         'current' => $page,
