@@ -27,7 +27,7 @@ $sortMap = [
     'duration' => 'duration_seconds',
     'decision_until' => 'decision_until_active',
     'scenario' => 'a.scenario',
-    'machine' => 'm.machine_id',
+    'machine' => 'a.machine_alerts',
     'source_ip' => 'a.source_ip',
     'source_country' => 'a.source_country',
     'events_count' => 'a.events_count'
@@ -73,11 +73,10 @@ try {
     ")->fetchAll(PDO::FETCH_COLUMN);
 
     $filterOptions['machines'] = $db->query("
-        SELECT DISTINCT m.machine_id
-        FROM alerts a
-        LEFT JOIN machines m ON m.id = a.machine_alerts
-        WHERE m.machine_id IS NOT NULL AND m.machine_id != ''
-        ORDER BY m.machine_id
+        SELECT DISTINCT machine_alerts
+        FROM alerts
+        WHERE machine_alerts IS NOT NULL
+        ORDER BY machine_alerts
     ")->fetchAll(PDO::FETCH_COLUMN);
 
     $conditions = ['a.created_at >= :since'];
@@ -97,7 +96,7 @@ try {
     }
 
     if ($filters['machine'] !== '') {
-        $conditions[] = 'LOWER(m.machine_id) LIKE :machine';
+        $conditions[] = 'LOWER(a.machine_alerts) LIKE :machine';
         $params[':machine'] = '%' . strtolower($filters['machine']) . '%';
     }
 
@@ -116,8 +115,6 @@ try {
         SELECT COUNT(*) FROM (
             SELECT a.id
             FROM alerts a
-            LEFT JOIN decisions d ON d.alert_decisions = a.id
-            LEFT JOIN machines m ON m.id = a.machine_alerts
             LEFT JOIN (
                 SELECT scenario, source_ip
                 FROM alerts
@@ -151,17 +148,15 @@ try {
             a.events_count,
             a.source_ip,
             a.source_country,
-            m.machine_id as machine_id,
-            MIN(CASE WHEN d.until >= NOW() THEN d.until END) as decision_until_active,
-            MAX(d.until) as decision_until,
+            a.machine_alerts as machine_id,
+            NULL as decision_until_active,
+            NULL as decision_until,
             CASE
                 WHEN a.started_at IS NULL OR a.stopped_at IS NULL THEN NULL
                 ELSE TIMESTAMPDIFF(SECOND, a.started_at, a.stopped_at)
             END as duration_seconds,
             CASE WHEN repeated.scenario IS NULL THEN 0 ELSE 1 END as is_repeated
         FROM alerts a
-        LEFT JOIN decisions d ON d.alert_decisions = a.id
-        LEFT JOIN machines m ON m.id = a.machine_alerts
         LEFT JOIN (
             SELECT scenario, source_ip
             FROM alerts
