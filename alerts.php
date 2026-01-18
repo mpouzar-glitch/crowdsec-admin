@@ -256,16 +256,16 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                                 <td><?= (int) $alert['simulated'] === 1 ? 'Ano' : 'Ne' ?></td>
                                 <td>
                                     <div class="table-actions">
-                                        <button class="icon-btn icon-btn-primary" onclick="viewAlert(<?= $alertId ?>)" aria-label="Detail" title="Detail">
+                                        <button type="button" class="icon-btn icon-btn-primary" onclick="viewAlert(<?= $alertId ?>)" aria-label="Detail" title="Detail">
                                             <i class="fa-solid fa-eye"></i>
                                         </button>
-                                        <button class="icon-btn <?= $banClass ?>" onclick="toggleAlertDecision(<?= $alertId ?>)" <?= $ipDisabled ? 'disabled' : '' ?> aria-label="<?= htmlspecialchars($banLabel) ?>" title="<?= htmlspecialchars($banLabel) ?>">
+                                        <button type="button" class="icon-btn <?= $banClass ?>" onclick="toggleAlertDecision(<?= $alertId ?>)" <?= $ipDisabled ? 'disabled' : '' ?> aria-label="<?= htmlspecialchars($banLabel) ?>" title="<?= htmlspecialchars($banLabel) ?>">
                                             <i class="fa-solid <?= $banIcon ?>"></i>
                                         </button>
-                                        <button class="icon-btn icon-btn-primary" onclick="extendAlertDecision(<?= $alertId ?>)" <?= $extendDisabled ? 'disabled' : '' ?> aria-label="Prodloužit ban" title="Prodloužit ban">
+                                        <button type="button" class="icon-btn icon-btn-primary" onclick="extendAlertDecision(<?= $alertId ?>)" <?= $extendDisabled ? 'disabled' : '' ?> aria-label="Prodloužit ban" title="Prodloužit ban">
                                             <i class="fa-solid fa-clock"></i>
                                         </button>
-                                        <button class="icon-btn icon-btn-success" onclick="addAlertIpToWhitelist('<?= htmlspecialchars($sourceIp, ENT_QUOTES) ?>')" <?= $ipDisabled ? 'disabled' : '' ?> aria-label="Whitelist" title="Whitelist">
+                                        <button type="button" class="icon-btn icon-btn-success" onclick="addAlertIpToWhitelist('<?= htmlspecialchars($sourceIp, ENT_QUOTES) ?>')" <?= $ipDisabled ? 'disabled' : '' ?> aria-label="Whitelist" title="Whitelist">
                                             <i class="fa-solid fa-shield"></i>
                                         </button>
                                     </div>
@@ -289,7 +289,7 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
         }
 
         function viewAlert(alertId) {
-            const url = `/api/alerts?id=${encodeURIComponent(alertId)}`;
+            const url = `/api/alerts.php?id=${encodeURIComponent(alertId)}`;
             window.open(url, '_blank', 'noopener');
         }
 
