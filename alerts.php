@@ -50,7 +50,7 @@ $filters = [
 $params = [];
 
 $page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
-$offset = ($page - 1) * ITEMS_PER_PAGE;
+$offset = ($page - 1) * $appEnv['ITEMS_PER_PAGE'];
 
 $whereClause = buildAlertsWhereClause($filters, $params);
 
@@ -73,9 +73,9 @@ try {
     $countStmt = $db->prepare($countSql);
     $countStmt->execute($params);
     $totalItems = (int) $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
-    $totalPages = max(1, (int) ceil($totalItems / ITEMS_PER_PAGE));
+    $totalPages = max(1, (int) ceil($totalItems / $appEnv['ITEMS_PER_PAGE']));
     $page = min($page, $totalPages);
-    $offset = ($page - 1) * ITEMS_PER_PAGE;
+    $offset = ($page - 1) * $appEnv['ITEMS_PER_PAGE'];
 
     $sql = "SELECT * FROM alerts
         {$whereClause}
@@ -86,7 +86,7 @@ try {
     foreach ($params as $key => $value) {
         $stmt->bindValue($key, $value);
     }
-    $stmt->bindValue(':limit', ITEMS_PER_PAGE, PDO::PARAM_INT);
+    $stmt->bindValue(':limit', $appEnv['ITEMS_PER_PAGE'], PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
     $alerts = $stmt->fetchAll(PDO::FETCH_ASSOC);
