@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/filter_helper.php';
+require_once __DIR__ . '/includes/alerts_helper.php';
 
 requireLogin();
 
@@ -24,14 +25,11 @@ $sortableColumns = [
 ];
 
 $sort = $_GET['sort'] ?? 'created_at';
-$sortDir = strtolower($_GET['dir'] ?? 'desc');
-
-if (!isset($sortableColumns[$sort])) {
-    $sort = 'created_at';
-}
-
-$sortDir = $sortDir === 'asc' ? 'asc' : 'desc';
-$orderBy = $sortableColumns[$sort] . ' ' . strtoupper($sortDir);
+$sortDir = $_GET['dir'] ?? 'desc';
+$sortConfig = buildAlertsSort($sort, $sortDir, $sortableColumns);
+$sort = $sortConfig['sort'];
+$sortDir = $sortConfig['dir'];
+$orderBy = $sortConfig['order_by'];
 
 $getSortIcon = function (string $column) use ($sort, $sortDir): string {
     if ($sort !== $column) {
@@ -49,47 +47,13 @@ $filters = [
     'simulated' => (string) getFilterValue('simulated', $filterSessionKey)
 ];
 
-$whereConditions = [];
 $params = [];
-
-if ($filters['ip'] !== '') {
-    $whereConditions[] = 'source_ip = :ip';
-    $params[':ip'] = $filters['ip'];
-}
-
-if ($filters['scenario'] !== '') {
-    $whereConditions[] = 'scenario LIKE :scenario';
-    $params[':scenario'] = '%' . $filters['scenario'] . '%';
-}
-
-if ($filters['country'] !== '') {
-    $whereConditions[] = 'source_country = :country';
-    $params[':country'] = $filters['country'];
-}
-
-if ($filters['date_from'] !== '') {
-    $whereConditions[] = 'created_at >= :date_from';
-    $params[':date_from'] = $filters['date_from'] . ' 00:00:00';
-}
-
-if ($filters['date_to'] !== '') {
-    $whereConditions[] = 'created_at <= :date_to';
-    $params[':date_to'] = $filters['date_to'] . ' 23:59:59';
-}
-
-if ($filters['simulated'] !== '') {
-    $whereConditions[] = 'simulated = :simulated';
-    $params[':simulated'] = (int) $filters['simulated'];
-}
 
 define('ITEMS_PER_PAGE', 50);
 $page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
 $offset = ($page - 1) * ITEMS_PER_PAGE;
 
-$whereClause = '';
-if (!empty($whereConditions)) {
-    $whereClause = 'WHERE ' . implode(' AND ', $whereConditions);
-}
+$whereClause = buildAlertsWhereClause($filters, $params);
 
 $alerts = [];
 $totalItems = 0;
