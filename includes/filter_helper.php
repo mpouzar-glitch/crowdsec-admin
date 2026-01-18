@@ -4,6 +4,7 @@
  * Provides reusable filter functionality with session persistence
  */
 require_once __DIR__ . '/lang_helper.php';
+require_once __DIR__ . '/alerts_helper.php';
 
 /**
  * Initialize filter session if not exists
@@ -621,6 +622,185 @@ function buildQueryString($params = []) {
     }
 
     return http_build_query($filtered);
+}
+
+/**
+ * Fetch extended statistics for alerts and decisions
+ *
+ * @param PDO $db Database connection
+ * @param array $filters Current filters
+ * @return array Statistics data
+ */
+function getExtendedQuarantineStats(PDO $db, array $filters = []): array {
+    $stats = [
+        'total_alerts' => 0,
+        'unique_ips' => 0,
+        'unique_scenarios' => 0,
+        'total_events' => 0,
+        'simulated_alerts' => 0,
+        'active_decisions' => 0,
+        'avg_events' => 0,
+    ];
+
+    try {
+        $params = [];
+        $whereClause = buildAlertsWhereClause($filters, $params);
+
+        $sql = "SELECT
+            COUNT(*) AS total_alerts,
+            COUNT(DISTINCT source_ip) AS unique_ips,
+            COUNT(DISTINCT scenario) AS unique_scenarios,
+            SUM(events_count) AS total_events,
+            COUNT(CASE WHEN simulated = 1 THEN 1 END) AS simulated_alerts
+        FROM alerts
+        {$whereClause}";
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row) {
+            $stats['total_alerts'] = (int) ($row['total_alerts'] ?? 0);
+            $stats['unique_ips'] = (int) ($row['unique_ips'] ?? 0);
+            $stats['unique_scenarios'] = (int) ($row['unique_scenarios'] ?? 0);
+            $stats['total_events'] = (int) ($row['total_events'] ?? 0);
+            $stats['simulated_alerts'] = (int) ($row['simulated_alerts'] ?? 0);
+        }
+
+        $decisionsSql = "SELECT COUNT(*) AS active_decisions
+            FROM decisions
+            WHERE `until` > NOW()
+              AND alert_decisions IN (SELECT id FROM alerts {$whereClause})";
+        $decisionsStmt = $db->prepare($decisionsSql);
+        $decisionsStmt->execute($params);
+        $decisionRow = $decisionsStmt->fetch(PDO::FETCH_ASSOC);
+        $stats['active_decisions'] = (int) ($decisionRow['active_decisions'] ?? 0);
+
+        if ($stats['total_alerts'] > 0) {
+            $stats['avg_events'] = $stats['total_events'] / $stats['total_alerts'];
+        }
+    } catch (Throwable $e) {
+        error_log('Alert stats error: ' . $e->getMessage());
+    }
+
+    return $stats;
+}
+
+/**
+ * Render inline stats for quarantine pages
+ *
+ * @param array $stats Statistics data
+ * @param array $options Display options
+ * @return string HTML output
+ */
+function renderStatsInline(array $stats, array $options = []): string {
+    $opts = array_merge([
+        'show_total' => true,
+        'show_rejected' => false,
+        'show_quarantined' => false,
+        'show_learned_ham' => false,
+        'show_learned_spam' => false,
+        'show_released' => false,
+        'show_avg_score' => false,
+        'show_unique_ips' => false,
+        'show_unique_scenarios' => false,
+        'show_total_events' => false,
+        'show_simulated' => false,
+        'show_active_decisions' => false,
+        'show_avg_events' => false,
+    ], $options);
+
+    $stats = array_merge([
+        'total_alerts' => 0,
+        'unique_ips' => 0,
+        'unique_scenarios' => 0,
+        'total_events' => 0,
+        'simulated_alerts' => 0,
+        'active_decisions' => 0,
+        'avg_events' => 0,
+    ], $stats);
+
+    $resolveLabel = function (string $key, string $fallback): string {
+        $label = __($key);
+        return $label === $key ? $fallback : $label;
+    };
+
+    $items = [];
+
+    if ($opts['show_total']) {
+        $items[] = [
+            'label' => $resolveLabel('stats_total', 'Celkem alertů'),
+            'value' => number_format($stats['total_alerts']),
+            'class' => 'total',
+        ];
+    }
+
+    $showActiveDecisions = $opts['show_active_decisions'] || $opts['show_rejected'];
+    if ($showActiveDecisions) {
+        $items[] = [
+            'label' => $resolveLabel('stats_active_decisions', 'Aktivní rozhodnutí'),
+            'value' => number_format($stats['active_decisions']),
+            'class' => 'reject',
+        ];
+    }
+
+    $showUniqueIps = $opts['show_unique_ips'] || $opts['show_quarantined'];
+    if ($showUniqueIps) {
+        $items[] = [
+            'label' => $resolveLabel('stats_unique_ips', 'Unikátní IP'),
+            'value' => number_format($stats['unique_ips']),
+            'class' => 'marked',
+        ];
+    }
+
+    $showUniqueScenarios = $opts['show_unique_scenarios'] || $opts['show_learned_ham'];
+    if ($showUniqueScenarios) {
+        $items[] = [
+            'label' => $resolveLabel('stats_unique_scenarios', 'Unikátní scénáře'),
+            'value' => number_format($stats['unique_scenarios']),
+            'class' => '',
+        ];
+    }
+
+    $showTotalEvents = $opts['show_total_events'] || $opts['show_learned_spam'];
+    if ($showTotalEvents) {
+        $items[] = [
+            'label' => $resolveLabel('stats_total_events', 'Celkem událostí'),
+            'value' => number_format($stats['total_events']),
+            'class' => '',
+        ];
+    }
+
+    $showSimulated = $opts['show_simulated'] || $opts['show_released'];
+    if ($showSimulated) {
+        $items[] = [
+            'label' => $resolveLabel('stats_simulated_alerts', 'Simulované alerty'),
+            'value' => number_format($stats['simulated_alerts']),
+            'class' => '',
+        ];
+    }
+
+    $showAvgEvents = $opts['show_avg_events'] || $opts['show_avg_score'];
+    if ($showAvgEvents) {
+        $items[] = [
+            'label' => $resolveLabel('stats_avg_events', 'Průměr událostí'),
+            'value' => number_format($stats['avg_events'], 2),
+            'class' => 'score',
+        ];
+    }
+
+    ob_start();
+    ?>
+    <div class="stats-inline">
+        <?php foreach ($items as $item): ?>
+            <div class="stat-inline-item <?php echo htmlspecialchars(trim($item['class'])); ?>">
+                <span class="stat-inline-label"><?php echo htmlspecialchars($item['label']); ?></span>
+                <span class="stat-inline-value"><?php echo htmlspecialchars($item['value']); ?></span>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <?php
+    return ob_get_clean();
 }
 
 /**
