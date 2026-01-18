@@ -44,6 +44,10 @@ function renderPageStart($pageTitle, $activeMenu, $appTitle = 'CrowdSec Admin') 
     echo "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n";
     echo "    <title>{$pageTitle}</title>\n";
     echo "    <link rel=\"stylesheet\" href=\"/assets/css/style.css\">\n";
+    if ($activeMenu === 'alerts') {
+        echo "    <link rel=\"stylesheet\" href=\"/assets/css/style2.css\">\n";
+        echo "    <link rel=\"stylesheet\" href=\"/assets/css/bulk.css\">\n";
+    }
     echo "    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n";
     echo "    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n";
     echo "    <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n";

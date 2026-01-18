@@ -103,7 +103,7 @@ function getPostfixConnection(?string &$error = null): ?PDO {
 // ============================================
 // Session Timeout Check
 // ============================================
-if (function_exists('isAuthenticated') && isAuthenticated()) {
+if (defined('SESSION_TIMEOUT') && function_exists('isAuthenticated') && isAuthenticated()) {
     $last_activity = $_SESSION['last_activity'] ?? time();
     if (time() - $last_activity > SESSION_TIMEOUT) {
         session_unset();
@@ -117,7 +117,7 @@ if (function_exists('isAuthenticated') && isAuthenticated()) {
 // ============================================
 // Debug Output (if enabled)
 // ============================================
-if (DEBUG_MODE && function_exists('isAuthenticated') && isAuthenticated() && isset($_GET['debug_domain'])) {
+if (defined('DEBUG_MODE') && DEBUG_MODE && function_exists('isAuthenticated') && isAuthenticated() && isset($_GET['debug_domain'])) {
     debugDomainFilter();
 }
 
@@ -1242,16 +1242,18 @@ function getMessageById($id, $check_domain = true) {
 /**
  * Format datetime
  */
-function formatDateTime($datetime, $format = 'd.m.Y H:i:s') {
-    if (empty($datetime)) {
-        return '';
-    }
+if (!function_exists('formatDateTime')) {
+    function formatDateTime($datetime, $format = 'd.m.Y H:i:s') {
+        if (empty($datetime)) {
+            return '';
+        }
 
-    try {
-        $dt = new DateTime($datetime);
-        return $dt->format($format);
-    } catch (Exception $e) {
-        return $datetime;
+        try {
+            $dt = new DateTime($datetime);
+            return $dt->format($format);
+        } catch (Exception $e) {
+            return $datetime;
+        }
     }
 }
 
@@ -2082,6 +2084,7 @@ function renderStatsInline($stats, $config = []) {
     return ob_get_clean();
 }
 
+if (!function_exists('renderMessagesTableHeader')) {
 function renderMessagesTableHeader(array $options = []): string {
     $sort = $options['sort'] ?? '';
     $buildSortLink = $options['buildSortLink'] ?? null;
@@ -2214,6 +2217,7 @@ function renderMessagesTableHeader(array $options = []): string {
     $header .= "    </tr>\n</thead>\n";
 
     return $header;
+}
 }
 
 

@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/layout.php';
-require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/functions2.php';
+require_once __DIR__ . '/filter_helper.php';
 
 requireLogin();
 
@@ -9,6 +10,9 @@ $env = loadEnv();
 $appTitle = $env['APP_TITLE'] ?? 'CrowdSec Admin';
 $userRole = $_SESSION['user_role'] ?? 'viewer';
 $user = $_SESSION['username'] ?? 'unknown';
+
+$filterSessionKey = 'alerts_filters';
+initFilterSession($filterSessionKey);
 
 $sortableColumns = [
     'created_at' => 'created_at',
@@ -30,18 +34,6 @@ if (!isset($sortableColumns[$sort])) {
 $sortDir = $sortDir === 'asc' ? 'asc' : 'desc';
 $orderBy = $sortableColumns[$sort] . ' ' . strtoupper($sortDir);
 
-$sortParams = array_diff_key($_GET, ['page' => '', 'sort' => '', 'dir' => '']);
-
-$buildSortLink = function (string $column) use ($sort, $sortDir, $sortParams): string {
-    $nextDir = ($sort === $column && $sortDir === 'asc') ? 'desc' : 'asc';
-    $params = array_merge($sortParams, [
-        'sort' => $column,
-        'dir' => $nextDir,
-        'page' => 1
-    ]);
-    return '?' . http_build_query($params);
-};
-
 $getSortIcon = function (string $column) use ($sort, $sortDir): string {
     if ($sort !== $column) {
         return 'fa-sort';
@@ -50,12 +42,12 @@ $getSortIcon = function (string $column) use ($sort, $sortDir): string {
 };
 
 $filters = [
-    'ip' => trim((string) ($_GET['ip'] ?? '')),
-    'scenario' => trim((string) ($_GET['scenario'] ?? '')),
-    'country' => trim((string) ($_GET['country'] ?? '')),
-    'date_from' => trim((string) ($_GET['date_from'] ?? '')),
-    'date_to' => trim((string) ($_GET['date_to'] ?? '')),
-    'simulated' => isset($_GET['simulated']) ? (string) $_GET['simulated'] : ''
+    'ip' => trim((string) getFilterValue('ip', $filterSessionKey)),
+    'scenario' => trim((string) getFilterValue('scenario', $filterSessionKey)),
+    'country' => trim((string) getFilterValue('country', $filterSessionKey)),
+    'date_from' => trim((string) getFilterValue('date_from', $filterSessionKey)),
+    'date_to' => trim((string) getFilterValue('date_to', $filterSessionKey)),
+    'simulated' => (string) getFilterValue('simulated', $filterSessionKey)
 ];
 
 $whereConditions = [];
@@ -174,92 +166,122 @@ try {
     error_log('Alerts page error: ' . $e->getMessage());
 }
 
-$buildQuery = function (array $overrides = []) use ($filters, $sort, $sortDir) {
-    $query = array_merge([
-        'ip' => $filters['ip'],
-        'scenario' => $filters['scenario'],
-        'country' => $filters['country'],
-        'date_from' => $filters['date_from'],
-        'date_to' => $filters['date_to'],
-        'simulated' => $filters['simulated'],
+$filterQuery = array_filter([
+    'scenario' => $filters['scenario'],
+    'ip' => $filters['ip'],
+    'country' => $filters['country'],
+    'date_from' => $filters['date_from'],
+    'date_to' => $filters['date_to'],
+    'simulated' => $filters['simulated'],
+]);
+
+$buildSortLink = function (string $column) use ($sort, $sortDir, $filterQuery): string {
+    $nextDir = ($sort === $column && $sortDir === 'asc') ? 'desc' : 'asc';
+    $params = array_merge($filterQuery, [
+        'sort' => $column,
+        'dir' => $nextDir,
+        'page' => 1
+    ]);
+    return '?' . buildQueryString($params);
+};
+
+$buildQuery = function (array $overrides = []) use ($filterQuery, $sort, $sortDir) {
+    $query = array_merge($filterQuery, [
         'sort' => $sort,
         'dir' => $sortDir
     ], $overrides);
 
-    $query = array_filter($query, function ($value) {
-        return $value !== null && $value !== '';
-    });
-
-    return http_build_query($query);
+    return buildQueryString($query);
 };
 
-renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
-?>
-    <section class="page-header">
-        <div>
-            <h1>Alerty</h1>
-            <p class="muted">Přehled všech incidentů v CrowdSec. Celkem <strong><?= $totalItems ?></strong> alertů.</p>
-        </div>
-        <div class="toolbar">
-            <a class="btn" href="/alerts.php?<?= htmlspecialchars($buildQuery()) ?>">Obnovit</a>
-        </div>
-    </section>
-
-    <?= renderFilterForm([
-        'resetUrl' => '/alerts.php',
-        'fields' => [
-            [
-                'name' => 'scenario',
-                'id' => 'alertFilterScenario',
-                'labelHtml' => '<i class="fa-solid fa-layer-group"></i> Scénář',
-                'placeholder' => 'např. ssh-bf',
-                'value' => $filters['scenario'],
-            ],
-            [
-                'name' => 'ip',
-                'id' => 'alertFilterIp',
-                'labelHtml' => '<i class="fa-solid fa-network-wired"></i> IP adresa',
-                'placeholder' => 'např. 192.168.1.1',
-                'value' => $filters['ip'],
-            ],
-            [
-                'name' => 'country',
-                'id' => 'alertFilterCountry',
-                'labelHtml' => '<i class="fa-solid fa-flag"></i> Země',
-                'placeholder' => 'např. CZ',
-                'value' => $filters['country'],
-            ],
-            [
-                'type' => 'date',
-                'name' => 'date_from',
-                'id' => 'alertFilterDateFrom',
-                'labelHtml' => '<i class="fa-solid fa-calendar"></i> Datum od',
-                'value' => $filters['date_from'],
-            ],
-            [
-                'type' => 'date',
-                'name' => 'date_to',
-                'id' => 'alertFilterDateTo',
-                'labelHtml' => '<i class="fa-solid fa-calendar"></i> Datum do',
-                'value' => $filters['date_to'],
-            ],
-            [
-                'type' => 'select',
-                'name' => 'simulated',
-                'id' => 'alertFilterSimulated',
-                'labelHtml' => '<i class="fa-solid fa-flask"></i> Simulované',
-                'options' => [
-                    '' => 'Všechny',
-                    '1' => 'Ano',
-                    '0' => 'Ne',
-                ],
-                'value' => $filters['simulated'],
-            ],
+$filterDefinitions = [
+    'scenario' => [
+        'key' => 'scenario',
+        'type' => 'text',
+        'label' => 'Scénář',
+        'icon' => 'fas fa-layer-group',
+        'placeholder' => 'např. ssh-bf',
+        'value' => $filters['scenario'],
+        'class' => 'filter-group',
+        'max_width' => 200,
+    ],
+    'ip' => [
+        'key' => 'ip',
+        'type' => 'text',
+        'label' => 'IP adresa',
+        'icon' => 'fas fa-network-wired',
+        'placeholder' => 'např. 192.168.1.1',
+        'value' => $filters['ip'],
+        'class' => 'filter-group',
+        'max_width' => 140,
+    ],
+    'country' => [
+        'key' => 'country',
+        'type' => 'text',
+        'label' => 'Země',
+        'icon' => 'fas fa-flag',
+        'placeholder' => 'např. CZ',
+        'value' => $filters['country'],
+        'class' => 'filter-group',
+        'max_width' => 80,
+    ],
+    'date_from' => [
+        'key' => 'date_from',
+        'type' => 'date',
+        'label' => 'Datum od',
+        'icon' => 'fas fa-calendar',
+        'value' => $filters['date_from'],
+        'class' => 'filter-group',
+        'max_width' => 160,
+    ],
+    'date_to' => [
+        'key' => 'date_to',
+        'type' => 'date',
+        'label' => 'Datum do',
+        'icon' => 'fas fa-calendar',
+        'value' => $filters['date_to'],
+        'class' => 'filter-group',
+        'max_width' => 160,
+    ],
+    'simulated' => [
+        'key' => 'simulated',
+        'type' => 'select',
+        'label' => 'Simulované',
+        'icon' => 'fas fa-flask',
+        'value' => $filters['simulated'],
+        'class' => 'filter-group',
+        'max_width' => 140,
+        'options' => [
+            '' => 'Všechny',
+            '1' => 'Ano',
+            '0' => 'Ne',
         ],
-    ]) ?>
+    ],
+    '_meta' => [
+        'form_id' => 'alertFilterForm',
+        'reset_url' => '/alerts.php?reset_filters=1',
+    ],
+];
 
-    <section class="card">
-        <div class="card-body">
+renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
+$refreshQuery = $buildQuery();
+$refreshUrl = $refreshQuery === '' ? '/alerts.php' : '/alerts.php?' . $refreshQuery;
+?>
+    <div class="container">
+        <section class="page-header">
+            <div>
+                <h1>Alerty</h1>
+                <p class="muted">Přehled všech incidentů v CrowdSec. Celkem <strong><?= $totalItems ?></strong> alertů.</p>
+            </div>
+            <div class="toolbar">
+                <a class="btn btn-primary" href="<?= htmlspecialchars($refreshUrl) ?>">Obnovit</a>
+                <a class="btn btn-secondary" href="/alerts.php?reset_filters=1">Reset filtrů</a>
+            </div>
+        </section>
+
+        <?= renderSearchFilters($filterDefinitions) ?>
+
+        <section class="card">
             <table class="data-table data-table-compact alerts-table" id="alertsTable">
                 <thead>
                     <tr>
@@ -289,14 +311,17 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                             $banIcon = $hasDecision ? 'fa-unlock' : 'fa-ban';
                             $ipDisabled = $sourceIp === '';
                             $extendDisabled = !$hasDecision;
+                            $createdAt = formatDateTime($alert['created_at'], '-');
+                            $startedAt = formatDateTime($alert['started_at'], '-');
+                            $stoppedAt = formatDateTime($alert['stopped_at'], '-');
                             ?>
-                            <tr data-alert-id="<?= $alertId ?>" data-decision-id="<?= $decisionId ? (int) $decisionId : '' ?>" data-source-ip="<?= htmlspecialchars($sourceIp, ENT_QUOTES) ?>">
-                                <td><?= htmlspecialchars(formatDateTime($alert['created_at'])) ?></td>
-                                <td><?= htmlspecialchars($alert['started_at'] ? formatDateTime($alert['started_at']) : '-') ?></td>
-                                <td><?= htmlspecialchars($alert['stopped_at'] ? formatDateTime($alert['stopped_at']) : '-') ?></td>
-                                <td><?= htmlspecialchars((string) $alert['scenario']) ?></td>
-                                <td><?= htmlspecialchars((string) ($alert['source_ip'] ?? '-')) ?></td>
-                                <td><?= htmlspecialchars((string) ($alert['source_country'] ?? '-')) ?></td>
+                            <tr data-alert-id="<?= $alertId ?>" data-decision-id="<?= $decisionId ? (int) $decisionId : '' ?>" data-source-ip="<?= safe_html($sourceIp) ?>">
+                                <td><?= safe_html($createdAt) ?></td>
+                                <td><?= safe_html($startedAt) ?></td>
+                                <td><?= safe_html($stoppedAt) ?></td>
+                                <td><?= safe_html((string) $alert['scenario']) ?></td>
+                                <td><?= safe_html((string) ($alert['source_ip'] ?? '-')) ?></td>
+                                <td><?= safe_html((string) ($alert['source_country'] ?? '-')) ?></td>
                                 <td><?= (int) $alert['events_count'] ?></td>
                                 <td><?= (int) $alert['simulated'] === 1 ? 'Ano' : 'Ne' ?></td>
                                 <td>
@@ -320,8 +345,8 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                     <?php endif; ?>
                 </tbody>
             </table>
-        </div>
-    </section>
+        </section>
+    </div>
 
     <script>
         const alertDecisionDefaults = {
