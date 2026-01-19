@@ -19,8 +19,7 @@ $sortableColumns = [
     'source_ip' => 'source_ip',
     'source_country' => 'source_country',
     'events_count' => 'events_count',
-    'started_at' => 'started_at',
-    'stopped_at' => 'stopped_at'
+    'started_at' => 'started_at'
 ];
 
 $sort = $_GET['sort'] ?? 'created_at';
@@ -208,7 +207,6 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                     'columns' => [
                         'created_at',
                         'started_at',
-                        'stopped_at',
                         'scenario',
                         'source_ip',
                         'source_country',
@@ -220,12 +218,13 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                 ?>
                 <tbody>
                     <?php if (empty($alerts)): ?>
-                        <tr><td colspan="9" class="muted">Žádná data</td></tr>
+                        <tr><td colspan="8" class="muted">Žádná data</td></tr>
                     <?php else: ?>
                         <?php foreach ($alerts as $alert): ?>
                             <?php
                             $alertId = (int) $alert['id'];
                             $sourceIp = (string) ($alert['source_ip'] ?? '');
+                            $scenario = (string) ($alert['scenario'] ?? '');
                             $decisionId = $activeDecisions[$alertId] ?? null;
                             $hasDecision = $decisionId !== null;
                             $banLabel = $hasDecision ? 'Odebrat ban' : 'Ban';
@@ -235,7 +234,8 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                             $extendDisabled = !$hasDecision;
                             $createdAt = formatDateTime($alert['created_at'], '-');
                             $startedAt = formatDateTime($alert['started_at'], '-');
-                            $stoppedAt = formatDateTime($alert['stopped_at'], '-');
+                            $durationLabel = formatAlertDurationLabel($alert['started_at'] ?? null, $alert['stopped_at'] ?? null);
+                            $startedAtLabel = $startedAt === '-' ? '-' : $startedAt . ' - ' . $durationLabel;
                             $countryCode = strtolower( $alert['source_country']);
                             $countryTitle = $countryCode !== '' ? strtoupper($countryCode) : '-';
                             $countryLink = $countryCode !== ''
@@ -244,14 +244,35 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                             $flag = $countryCode !== ''
                                 ? '<span class="fi fi-' . htmlspecialchars($countryCode) . '" title="' . htmlspecialchars($countryTitle) . '"></span>'
                                 : '-';
+                            $scenarioLink = $scenario !== ''
+                                ? '?' . buildQueryString(array_merge($filters, ['scenario' => $scenario, 'page' => 1]))
+                                : '';
+                            $ipLink = $sourceIp !== ''
+                                ? '?' . buildQueryString(array_merge($filters, ['ip' => $sourceIp, 'page' => 1]))
+                                : '';
 
                             ?>
                             <tr data-alert-id="<?= $alertId ?>" data-decision-id="<?= $decisionId ? (int) $decisionId : '' ?>" data-source-ip="<?= safe_html($sourceIp) ?>">
                                 <td><?= safe_html($createdAt) ?></td>
-                                <td><?= safe_html($startedAt) ?></td>
-                                <td><?= safe_html($stoppedAt) ?></td>
-                                <td><?= safe_html((string) $alert['scenario']) ?></td>
-                                <td><?= safe_html((string) ($alert['source_ip'] ?? '-')) ?></td>
+                                <td><?= safe_html($startedAtLabel) ?></td>
+                                <td>
+                                    <?php if ($scenarioLink !== ''): ?>
+                                        <a href="<?php echo htmlspecialchars($scenarioLink); ?>" class="filter-link" title="Filtrovat podle scénáře">
+                                            <?php echo safe_html($scenario); ?>
+                                        </a>
+                                    <?php else: ?>
+                                        <?= safe_html($scenario !== '' ? $scenario : '-') ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ($ipLink !== ''): ?>
+                                        <a href="<?php echo htmlspecialchars($ipLink); ?>" class="filter-link" title="Filtrovat podle IP">
+                                            <?php echo safe_html($sourceIp); ?>
+                                        </a>
+                                    <?php else: ?>
+                                        <?= safe_html($sourceIp !== '' ? $sourceIp : '-') ?>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="text-center">
                                     <?php if ($countryLink !== ''): ?>
                                         <a href="<?php echo htmlspecialchars($countryLink); ?>" class="country-link" title="<?php echo htmlspecialchars(__('filter_by_country', ['country' => $countryTitle])); ?>">

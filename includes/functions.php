@@ -118,6 +118,30 @@ function formatAlertDuration($startedAt, $stoppedAt) {
     return "start: {$startLabel} trvání {$minutes} min";
 }
 
+function formatAlertDurationLabel($startedAt, $stoppedAt) {
+    if (!$startedAt || !$stoppedAt) {
+        return '-';
+    }
+
+    $start = strtotime((string) $startedAt);
+    $stop = strtotime((string) $stoppedAt);
+    if (!$start || !$stop || $stop < $start) {
+        return '-';
+    }
+
+    $minutes = (int) round(($stop - $start) / 60);
+    if ($minutes <= 0) {
+        $minutes = 1;
+    }
+
+    if ($minutes >= 60) {
+        $hours = (int) max(1, round($minutes / 60));
+        return "{$hours} hod";
+    }
+
+    return "{$minutes} min";
+}
+
 function buildPaginationPages($current, $total) {
     if ($total <= 7) {
         return range(1, $total);
