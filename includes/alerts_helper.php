@@ -71,10 +71,10 @@ function buildAlertsWhereClause(array $filters, array &$params): string {
     if (!empty($filters['repeat_count'])) {
         $repeatCount = $filters['repeat_count'];
         if ($repeatCount === '6+') {
-            $conditions[] = "(SELECT COUNT(*) FROM alerts a2 WHERE a2.source_ip = alerts.source_ip) >= ?";
+            $conditions[] = "ip_repeats.repeat_count >= ?";
             $params[] = 6;
         } else {
-            $conditions[] = "(SELECT COUNT(*) FROM alerts a2 WHERE a2.source_ip = alerts.source_ip) = ?";
+            $conditions[] = "ip_repeats.repeat_count = ?";
             $params[] = (int) $repeatCount;
         }
     }
@@ -239,7 +239,7 @@ function buildAlertsSort(string $sort, string $sortDir, array $sortableColumns):
  */
 function buildAlertsQuery(array $filters, array &$params, array $options = []): string {
     $defaults = [
-        'select' => "alerts.*, m.machine_id AS hostname, (SELECT COUNT(*) FROM alerts a2 WHERE a2.source_ip = alerts.source_ip) AS ip_repeat_count",
+        'select' => "alerts.*, m.machine_id AS hostname, ip_repeats.repeat_count AS ip_repeat_count",
         'orderby' => 'alerts.created_at DESC',
         'limit' => null,
         'offset' => 0
@@ -404,7 +404,12 @@ function getActiveDecisionsForAlerts(PDO $db, array $alertIds): array {
  * @return string FROM clause with joins
  */
 function buildAlertsFromClause(): string {
-    return "FROM alerts LEFT JOIN machines m ON alerts.machine_alerts = m.id";
+    return "FROM alerts LEFT JOIN machines m ON alerts.machine_alerts = m.id
+        LEFT JOIN (
+            SELECT source_ip, COUNT(*) AS repeat_count
+            FROM alerts
+            GROUP BY source_ip
+        ) ip_repeats ON ip_repeats.source_ip = alerts.source_ip";
 }
 
 /**
