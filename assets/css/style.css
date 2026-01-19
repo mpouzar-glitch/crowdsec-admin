@@ -1117,8 +1117,8 @@ th .sort-link {
 }
 
 .ip-repeat {
-    background: rgba(239, 68, 68, var(--repeat-opacity, 0.12));
-    color: var(--danger);
+    background: hsl(calc(210 - (210 * var(--repeat-intensity, 0))), 90%, 45%);
+    color: #fff;
     border-radius: 8px;
     display: inline-block;
     padding: 2px 6px;

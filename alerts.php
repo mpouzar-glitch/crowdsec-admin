@@ -171,11 +171,15 @@ $filterDefinitions = [
         'max_width' => 140,
         'options' => [
             '' => 'Všechny',
-            '2' => '2×',
-            '3' => '3×',
-            '4' => '4×',
-            '5' => '5×',
+            '2+' => '2× a více',
+            '3+' => '3× a více',
+            '4+' => '4× a více',
+            '5+' => '5× a více',
             '6+' => '6× a více',
+            '7+' => '7× a více',
+            '8+' => '8× a více',
+            '9+' => '9× a více',
+            '10+' => '10× a více',
         ],
     ],
     'decision_state' => [
@@ -294,8 +298,8 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                             $ipHighlightClass = $isRepeated ? 'ip-repeat' : '';
                             $ipHighlightStyle = '';
                             if ($isRepeated) {
-                                $repeatOpacity = min(0.12 + (($repeatCount - 2) * 0.08), 0.5);
-                                $ipHighlightStyle = ' style="--repeat-opacity: ' . number_format($repeatOpacity, 2, '.', '') . ';"';
+                                $repeatIntensity = min(max(($repeatCount - 2) / 8, 0), 1);
+                                $ipHighlightStyle = ' style="--repeat-intensity: ' . number_format($repeatIntensity, 2, '.', '') . ';"';
                             }
 
                             ?>
