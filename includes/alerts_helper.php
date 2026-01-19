@@ -70,9 +70,9 @@ function buildAlertsWhereClause(array $filters, array &$params): string {
 
     if (!empty($filters['repeat_count'])) {
         $repeatCount = $filters['repeat_count'];
-        if ($repeatCount === '6+') {
+        if (preg_match('/^(\d+)\+$/', $repeatCount, $matches)) {
             $conditions[] = "ip_repeats.repeat_count >= ?";
-            $params[] = 6;
+            $params[] = (int) $matches[1];
         } else {
             $conditions[] = "ip_repeats.repeat_count = ?";
             $params[] = (int) $repeatCount;
