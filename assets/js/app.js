@@ -2224,3 +2224,7 @@ window.loadWhitelist = loadWhitelist;
 window.openWhitelistModal = openWhitelistModal;
 window.refreshWhitelist = refreshWhitelist;
 window.clearWhitelistFilters = clearWhitelistFilters;
+window.viewAlert = viewAlert;
+window.toggleAlertDecision = toggleAlertDecision;
+window.extendAlertDecision = extendAlertDecision;
+window.addAlertIpToWhitelist = addAlertIpToWhitelist;

@@ -276,6 +276,24 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                 </tbody>
             </table>
         </section>
+
+        <div class="modal" id="alertModal" aria-hidden="true">
+            <div class="modal-content">
+                <button type="button" class="modal-close" aria-label="Zavřít detail alertu">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div id="alertDetail"></div>
+            </div>
+        </div>
+
+        <div class="modal" id="ipIntelModal" aria-hidden="true">
+            <div class="modal-content">
+                <button type="button" class="modal-close" aria-label="Zavřít detail IP">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div id="ipIntelDetail"></div>
+            </div>
+        </div>
     </div>
     <?= renderPagination([
         'current' => $page,
