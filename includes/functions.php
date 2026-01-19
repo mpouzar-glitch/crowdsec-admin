@@ -322,6 +322,11 @@ function renderMessagesTableHeader(array $options = []) {
             'class' => 'col-ip',
             'sort' => 'source_ip',
         ],
+        'ip_repeat_count' => [
+            'label' => 'Opakování',
+            'class' => 'col-count',
+            'sort' => 'ip_repeat_count',
+        ],
         'source_country' => [
             'label' => 'Země',
             'class' => 'col-country',

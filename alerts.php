@@ -17,6 +17,7 @@ $sortableColumns = [
     'created_at' => 'alerts.created_at',
     'scenario' => 'alerts.scenario',
     'source_ip' => 'alerts.source_ip',
+    'ip_repeat_count' => 'ip_repeats.repeat_count',
     'hostname' => 'm.machine_id',
     'source_country' => 'alerts.source_country',
     'events_count' => 'alerts.events_count',
@@ -241,6 +242,7 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                         'started_at',
                         'scenario',
                         'source_ip',
+                        'ip_repeat_count',
                         'hostname',
                         'source_country',
                         'events_count',
@@ -250,7 +252,7 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                 ?>
                 <tbody>
                     <?php if (empty($alerts)): ?>
-                        <tr><td colspan="8" class="muted">Žádná data</td></tr>
+                        <tr><td colspan="9" class="muted">Žádná data</td></tr>
                     <?php else: ?>
                         <?php foreach ($alerts as $alert): ?>
                             <?php
@@ -260,6 +262,7 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                             $hostname = (string) ($alert['hostname'] ?? '');
                             $repeatCount = (int) ($alert['ip_repeat_count'] ?? 0);
                             $isRepeated = $repeatCount >= 2;
+                            $repeatCountLabel = $repeatCount > 0 ? $repeatCount . '×' : '-';
                             $decisionId = $activeDecisions[$alertId] ?? null;
                             $hasDecision = $decisionId !== null;
                             $banLabel = $hasDecision ? 'Odebrat ban' : 'Ban';
@@ -288,7 +291,12 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                             $hostnameLink = $hostname !== ''
                                 ? '?' . buildQueryString(array_merge($filters, ['hostname' => $hostname, 'page' => 1]))
                                 : '';
-                            $ipHighlightClass = $isRepeated ? 'badge badge-repeated' : '';
+                            $ipHighlightClass = $isRepeated ? 'ip-repeat' : '';
+                            $ipHighlightStyle = '';
+                            if ($isRepeated) {
+                                $repeatOpacity = min(0.12 + (($repeatCount - 2) * 0.08), 0.5);
+                                $ipHighlightStyle = ' style="--repeat-opacity: ' . number_format($repeatOpacity, 2, '.', '') . ';"';
+                            }
 
                             ?>
                             <tr data-alert-id="<?= $alertId ?>" data-decision-id="<?= $decisionId ? (int) $decisionId : '' ?>" data-source-ip="<?= safe_html($sourceIp) ?>">
@@ -305,17 +313,18 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                                 </td>
                                 <td>
                                     <?php if ($ipLink !== ''): ?>
-                                        <a href="<?php echo htmlspecialchars($ipLink); ?>" class="filter-link <?= $ipHighlightClass ?>" title="Filtrovat podle IP">
+                                        <a href="<?php echo htmlspecialchars($ipLink); ?>" class="filter-link <?= $ipHighlightClass ?>"<?= $ipHighlightStyle ?> title="Filtrovat podle IP">
                                             <?php echo safe_html($sourceIp); ?>
                                         </a>
                                     <?php else: ?>
                                         <?php if ($sourceIp !== ''): ?>
-                                            <span class="<?= $ipHighlightClass ?>"><?= safe_html($sourceIp) ?></span>
+                                            <span class="<?= $ipHighlightClass ?>"<?= $ipHighlightStyle ?>><?= safe_html($sourceIp) ?></span>
                                         <?php else: ?>
                                             -
                                         <?php endif; ?>
                                     <?php endif; ?>
                                 </td>
+                                <td class="text-center"><?= safe_html($repeatCountLabel) ?></td>
                                 <td>
                                     <?php if ($hostnameLink !== ''): ?>
                                         <a href="<?php echo htmlspecialchars($hostnameLink); ?>" class="filter-link" title="Filtrovat podle hostname">
