@@ -14,12 +14,13 @@ $filterSessionKey = 'alertsfilters';
 initFilterSession($filterSessionKey);
 
 $sortableColumns = [
-    'created_at' => 'created_at',
-    'scenario' => 'scenario',
-    'source_ip' => 'source_ip',
-    'source_country' => 'source_country',
-    'events_count' => 'events_count',
-    'started_at' => 'started_at'
+    'created_at' => 'alerts.created_at',
+    'scenario' => 'alerts.scenario',
+    'source_ip' => 'alerts.source_ip',
+    'hostname' => 'm.machine_id',
+    'source_country' => 'alerts.source_country',
+    'events_count' => 'alerts.events_count',
+    'started_at' => 'alerts.started_at'
 ];
 
 $sort = $_GET['sort'] ?? 'created_at';
@@ -40,9 +41,11 @@ $filters = [
     'ip' => trim((string) getFilterValue('ip', $filterSessionKey)),
     'scenario' => trim((string) getFilterValue('scenario', $filterSessionKey)),
     'country' => trim((string) getFilterValue('country', $filterSessionKey)),
+    'hostname' => trim((string) getFilterValue('hostname', $filterSessionKey)),
+    'repeat_count' => trim((string) getFilterValue('repeat_count', $filterSessionKey)),
+    'decision_state' => trim((string) getFilterValue('decision_state', $filterSessionKey)),
     'datefrom' => trim((string) getFilterValue('datefrom', $filterSessionKey)),
     'dateto' => trim((string) getFilterValue('dateto', $filterSessionKey)),
-    'simulated' => (string) getFilterValue('simulated', $filterSessionKey)
 ];
 
 $params = [];
@@ -90,9 +93,11 @@ $filterQuery = array_filter([
     'scenario' => $filters['scenario'],
     'ip' => $filters['ip'],
     'country' => $filters['country'],
+    'hostname' => $filters['hostname'],
+    'repeat_count' => $filters['repeat_count'],
+    'decision_state' => $filters['decision_state'],
     'datefrom' => $filters['datefrom'],
     'dateto' => $filters['dateto'],
-    'simulated' => $filters['simulated'],
 ]);
 
 $buildSortQuery = function (string $column) use ($sort, $sortDir, $filterQuery): string {
@@ -145,6 +150,47 @@ $filterDefinitions = [
         'class' => 'filter-group',
         'max_width' => 80,
     ],
+    'hostname' => [
+        'key' => 'hostname',
+        'type' => 'text',
+        'label' => 'Hostname',
+        'icon' => 'fas fa-server',
+        'placeholder' => 'např. mail.example.cz',
+        'value' => $filters['hostname'],
+        'class' => 'filter-group',
+        'max_width' => 180,
+    ],
+    'repeat_count' => [
+        'key' => 'repeat_count',
+        'type' => 'select',
+        'label' => 'Opakování',
+        'icon' => 'fas fa-repeat',
+        'value' => $filters['repeat_count'],
+        'class' => 'filter-group',
+        'max_width' => 140,
+        'options' => [
+            '' => 'Všechny',
+            '2' => '2×',
+            '3' => '3×',
+            '4' => '4×',
+            '5' => '5×',
+            '6+' => '6× a více',
+        ],
+    ],
+    'decision_state' => [
+        'key' => 'decision_state',
+        'type' => 'select',
+        'label' => 'Decision',
+        'icon' => 'fas fa-gavel',
+        'value' => $filters['decision_state'],
+        'class' => 'filter-group',
+        'max_width' => 180,
+        'options' => [
+            '' => 'Všechny',
+            'active' => 'Aktivní decision',
+            'inactive' => 'Neaktivní decision',
+        ],
+    ],
     'date_from' => [
         'key' => 'datefrom',
         'type' => 'date',
@@ -162,20 +208,6 @@ $filterDefinitions = [
         'value' => $filters['dateto'],
         'class' => 'filter-group',
         'max_width' => 160,
-    ],
-    'simulated' => [
-        'key' => 'simulated',
-        'type' => 'select',
-        'label' => 'Simulované',
-        'icon' => 'fas fa-flask',
-        'value' => $filters['simulated'],
-        'class' => 'filter-group',
-        'max_width' => 140,
-        'options' => [
-            '' => 'Všechny',
-            '1' => 'Ano',
-            '0' => 'Ne',
-        ],
     ],
     '_meta' => [
         'form_id' => 'alertFilterForm',
@@ -209,9 +241,9 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                         'started_at',
                         'scenario',
                         'source_ip',
+                        'hostname',
                         'source_country',
                         'events_count',
-                        ['key' => 'simulated', 'sortable' => false],
                         ['key' => 'actions', 'label' => 'Akce', 'sortable' => false],
                     ],
                 ]);
@@ -225,6 +257,9 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                             $alertId = (int) $alert['id'];
                             $sourceIp = (string) ($alert['source_ip'] ?? '');
                             $scenario = (string) ($alert['scenario'] ?? '');
+                            $hostname = (string) ($alert['hostname'] ?? '');
+                            $repeatCount = (int) ($alert['ip_repeat_count'] ?? 0);
+                            $isRepeated = $repeatCount >= 2;
                             $decisionId = $activeDecisions[$alertId] ?? null;
                             $hasDecision = $decisionId !== null;
                             $banLabel = $hasDecision ? 'Odebrat ban' : 'Ban';
@@ -250,6 +285,10 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                             $ipLink = $sourceIp !== ''
                                 ? '?' . buildQueryString(array_merge($filters, ['ip' => $sourceIp, 'page' => 1]))
                                 : '';
+                            $hostnameLink = $hostname !== ''
+                                ? '?' . buildQueryString(array_merge($filters, ['hostname' => $hostname, 'page' => 1]))
+                                : '';
+                            $ipHighlightClass = $isRepeated ? 'badge badge-repeated' : '';
 
                             ?>
                             <tr data-alert-id="<?= $alertId ?>" data-decision-id="<?= $decisionId ? (int) $decisionId : '' ?>" data-source-ip="<?= safe_html($sourceIp) ?>">
@@ -266,11 +305,24 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                                 </td>
                                 <td>
                                     <?php if ($ipLink !== ''): ?>
-                                        <a href="<?php echo htmlspecialchars($ipLink); ?>" class="filter-link" title="Filtrovat podle IP">
+                                        <a href="<?php echo htmlspecialchars($ipLink); ?>" class="filter-link <?= $ipHighlightClass ?>" title="Filtrovat podle IP">
                                             <?php echo safe_html($sourceIp); ?>
                                         </a>
                                     <?php else: ?>
-                                        <?= safe_html($sourceIp !== '' ? $sourceIp : '-') ?>
+                                        <?php if ($sourceIp !== ''): ?>
+                                            <span class="<?= $ipHighlightClass ?>"><?= safe_html($sourceIp) ?></span>
+                                        <?php else: ?>
+                                            -
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ($hostnameLink !== ''): ?>
+                                        <a href="<?php echo htmlspecialchars($hostnameLink); ?>" class="filter-link" title="Filtrovat podle hostname">
+                                            <?php echo safe_html($hostname); ?>
+                                        </a>
+                                    <?php else: ?>
+                                        <?= safe_html($hostname !== '' ? $hostname : '-') ?>
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
@@ -283,7 +335,6 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                                     <?php endif; ?>
                                 </td>
                                 <td><?= (int) $alert['events_count'] ?></td>
-                                <td><?= (int) $alert['simulated'] === 1 ? 'Ano' : 'Ne' ?></td>
                                 <td>
                                     <div class="table-actions">
                                         <button type="button" class="icon-btn icon-btn-primary" onclick="void viewAlert(<?= $alertId ?>)" aria-label="Detail" title="Detail">

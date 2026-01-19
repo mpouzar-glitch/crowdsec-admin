@@ -16,26 +16,32 @@ function buildAlertsWhereClause(array $filters, array &$params): string {
     $definitions = [
         [
             'key' => 'ip',
-            'column' => 'source_ip',
+            'column' => 'alerts.source_ip',
             'operator' => 'equals'
         ],
         [
             'key' => 'scenario',
-            'column' => 'scenario',
+            'column' => 'alerts.scenario',
             'operator' => 'like',
             'lowercase' => false
         ],
         [
             'key' => 'country',
-            'column' => 'source_country',
+            'column' => 'alerts.source_country',
             'operator' => 'equals',
             'transform' => function($value) {
                 return strtoupper($value);
             }
         ],
         [
+            'key' => 'hostname',
+            'column' => 'm.machine_id',
+            'operator' => 'like',
+            'lowercase' => false,
+        ],
+        [
             'key' => 'datefrom',
-            'column' => 'created_at',
+            'column' => 'alerts.created_at',
             'operator' => 'gte',
             'transform' => function ($value) {
                 return $value . ' 00:00:00';
@@ -43,23 +49,36 @@ function buildAlertsWhereClause(array $filters, array &$params): string {
         ],
         [
             'key' => 'dateto',
-            'column' => 'created_at',
+            'column' => 'alerts.created_at',
             'operator' => 'lte',
             'transform' => function ($value) {
                 return $value . ' 23:59:59';
             }
         ],
-        [
-            'key' => 'simulated',
-            'column' => 'simulated',
-            'operator' => 'equals',
-            'transform' => function ($value) {
-                return (int) $value;
-            }
-        ],
     ];
     
     $conditions = buildFilterConditions($filters, $definitions, $params);
+
+    if (!empty($filters['decision_state'])) {
+        if ($filters['decision_state'] === 'active') {
+            $conditions[] = "EXISTS (SELECT 1 FROM decisions d WHERE d.alert_decisions = alerts.id AND (d.until IS NULL OR d.until > NOW()))";
+        }
+        if ($filters['decision_state'] === 'inactive') {
+            $conditions[] = "NOT EXISTS (SELECT 1 FROM decisions d WHERE d.alert_decisions = alerts.id AND (d.until IS NULL OR d.until > NOW()))";
+        }
+    }
+
+    if (!empty($filters['repeat_count'])) {
+        $repeatCount = $filters['repeat_count'];
+        if ($repeatCount === '6+') {
+            $conditions[] = "(SELECT COUNT(*) FROM alerts a2 WHERE a2.source_ip = alerts.source_ip) >= ?";
+            $params[] = 6;
+        } else {
+            $conditions[] = "(SELECT COUNT(*) FROM alerts a2 WHERE a2.source_ip = alerts.source_ip) = ?";
+            $params[] = (int) $repeatCount;
+        }
+    }
+
     return buildWhereClause($conditions);
 }
 
@@ -220,8 +239,8 @@ function buildAlertsSort(string $sort, string $sortDir, array $sortableColumns):
  */
 function buildAlertsQuery(array $filters, array &$params, array $options = []): string {
     $defaults = [
-        'select' => '*',
-        'orderby' => 'created_at DESC',
+        'select' => "alerts.*, m.machine_id AS hostname, (SELECT COUNT(*) FROM alerts a2 WHERE a2.source_ip = alerts.source_ip) AS ip_repeat_count",
+        'orderby' => 'alerts.created_at DESC',
         'limit' => null,
         'offset' => 0
     ];
@@ -229,7 +248,7 @@ function buildAlertsQuery(array $filters, array &$params, array $options = []): 
     $options = array_merge($defaults, $options);
     $whereClause = buildAlertsWhereClause($filters, $params);
     
-    $sql = "SELECT {$options['select']} FROM alerts WHERE {$whereClause}";
+    $sql = "SELECT {$options['select']} " . buildAlertsFromClause() . " WHERE {$whereClause}";
     
     if ($options['orderby']) {
         $sql .= " ORDER BY {$options['orderby']}";
@@ -256,7 +275,7 @@ function countAlerts(PDO $db, array $filters): int {
     $params = [];
     $whereClause = buildAlertsWhereClause($filters, $params);
     
-    $sql = "SELECT COUNT(*) FROM alerts WHERE {$whereClause}";
+    $sql = "SELECT COUNT(*) " . buildAlertsFromClause() . " WHERE {$whereClause}";
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
     
@@ -287,11 +306,11 @@ function getAlertsStats(PDO $db, array $filters): array {
         // Get basic alert statistics
         $sql = "SELECT 
             COUNT(*) AS totalalerts,
-            COUNT(DISTINCT source_ip) AS uniqueips,
-            COUNT(DISTINCT scenario) AS uniquescenarios,
-            SUM(events_count) AS totalevents,
-            COUNT(CASE WHEN simulated = 1 THEN 1 END) AS simulatedalerts
-        FROM alerts 
+            COUNT(DISTINCT alerts.source_ip) AS uniqueips,
+            COUNT(DISTINCT alerts.scenario) AS uniquescenarios,
+            SUM(alerts.events_count) AS totalevents,
+            COUNT(CASE WHEN alerts.simulated = 1 THEN 1 END) AS simulatedalerts
+        " . buildAlertsFromClause() . " 
         WHERE {$whereClause}";
         
         $stmt = $db->prepare($sql);
@@ -311,7 +330,7 @@ function getAlertsStats(PDO $db, array $filters): array {
             FROM decisions 
             WHERE (until IS NULL OR until > NOW()) 
             AND alert_decisions IN (
-                SELECT id FROM alerts WHERE {$whereClause}
+                SELECT alerts.id " . buildAlertsFromClause() . " WHERE {$whereClause}
             )";
         
         $decisionsStmt = $db->prepare($decisionsSql);
@@ -378,6 +397,14 @@ function getActiveDecisionsForAlerts(PDO $db, array $alertIds): array {
     }
     
     return $activeDecisions;
+}
+
+/**
+ * Build base FROM clause for alerts queries
+ * @return string FROM clause with joins
+ */
+function buildAlertsFromClause(): string {
+    return "FROM alerts LEFT JOIN machines m ON alerts.machine_alerts = m.id";
 }
 
 /**
