@@ -14,7 +14,7 @@ function fetchMenuBadgeCounts() {
         $alertStmt = $conn->query('SELECT COUNT(*) FROM alerts');
         $counts['alerts'] = (int) $alertStmt->fetchColumn();
 
-        $decisionStmt = $conn->prepare('SELECT COUNT(*) FROM decisions WHERE `until` IS NULL OR `until` >= NOW()');
+        $decisionStmt = $conn->prepare('SELECT COUNT(*) FROM decisions WHERE `until` IS NULL OR `until` >= UTC_TIMESTAMP()');
         $decisionStmt->execute();
         $counts['decisions'] = (int) $decisionStmt->fetchColumn();
     } catch (Exception $e) {
@@ -49,10 +49,15 @@ function renderPageStart($pageTitle, $activeMenu, $appTitle = 'CrowdSec Admin') 
     echo "    <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n";
     echo "    <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css\">\n";
     echo "    <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/7.5.0/css/flag-icons.min.css\">\n";
-    echo "    <script type=\"text/javascript\" src=\"/assets/js/app.js\"></script>";
     if ($activeMenu === 'dashboard') {
         echo "    <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/jsvectormap/1.5.3/css/jsvectormap.min.css\">\n";
+        echo "    <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>\n";
+        echo "    <script src=\"https://cdnjs.cloudflare.com/ajax/libs/jsvectormap/1.5.3/js/jsvectormap.min.js\"></script>\n";
+        echo "    <script src=\"https://cdnjs.cloudflare.com/ajax/libs/jsvectormap/1.5.3/maps/world.min.js\"></script>\n";
+        echo "    <script src=\"https://cdnjs.cloudflare.com/ajax/libs/jsvectormap/1.5.3/maps/world-merc.min.js\"></script>\n";
+        echo "    <script src=\"https://www.gstatic.com/charts/loader.js\"></script>\n";
     }
+    echo "    <script type=\"text/javascript\" src=\"/assets/js/app.js\"></script>\n";
     echo "</head>\n";
     echo "<body>\n";
     echo "    <div class=\"app-shell\">\n";

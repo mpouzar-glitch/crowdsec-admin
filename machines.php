@@ -48,12 +48,10 @@ try {
     $stmt->execute();
     $machines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $now = time();
     foreach ($machines as &$machine) {
-        $heartbeat = $machine['last_heartbeat'] ? strtotime($machine['last_heartbeat']) : null;
-        $isValidated = filter_var($machine['is_validated'], FILTER_VALIDATE_BOOLEAN);
-        $isOnline = $isValidated && $heartbeat && ($now - $heartbeat <= 120);
-        $machine['status'] = $isOnline ? 'Online' : 'Offline';
+        $statusMeta = evaluateMachineHeartbeatStatus($machine['last_heartbeat'] ?? null);
+        $machine['status'] = $statusMeta['status'];
+        $machine['status_class'] = $statusMeta['status_class'];
     }
     unset($machine);
 } catch (Exception $e) {
@@ -106,7 +104,7 @@ renderPageStart($appTitle . ' - Machines', 'machines', $appTitle);
                             <tr>
                                 <td><?= htmlspecialchars((string) $machine['machine_id']) ?></td>
                                 <td><?= htmlspecialchars((string) ($machine['ip_address'] ?? '-')) ?></td>
-                                <td><?= htmlspecialchars((string) $machine['status']) ?></td>
+                                <td><span class="badge <?= htmlspecialchars((string) $machine['status_class']) ?>"><?= htmlspecialchars((string) $machine['status']) ?></span></td>
                                 <td><?= htmlspecialchars(formatDateTime($machine['last_heartbeat'])) ?></td>
                                 <td><?= htmlspecialchars(formatDateTime($machine['last_push'])) ?></td>
                                 <td><?= (int) $machine['alerts_count'] ?></td>

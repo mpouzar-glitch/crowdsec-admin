@@ -10,7 +10,7 @@ header('Access-Control-Allow-Origin: *');
 
 $env = loadEnv();
 $lookbackMs = parseLookbackToMs($env['LOOKBACK_PERIOD'] ?? '7d');
-$since = date('Y-m-d H:i:s', (time() * 1000 - $lookbackMs) / 1000);
+$since = gmdate('Y-m-d H:i:s', (time() * 1000 - $lookbackMs) / 1000);
 
 try {
     $db = Database::getInstance()->getConnection();
@@ -22,7 +22,7 @@ try {
     $stats['total_alerts'] = $stmt->fetchColumn();
 
     // Active decisions
-    $stmt = $db->query("SELECT COUNT(*) as count FROM decisions WHERE until > NOW()");
+    $stmt = $db->query("SELECT COUNT(*) as count FROM decisions WHERE until > UTC_TIMESTAMP()");
     $stats['active_decisions'] = $stmt->fetchColumn();
 
     // Top scenarios
@@ -80,7 +80,7 @@ try {
             DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') as hour,
             COUNT(*) as count
         FROM alerts
-        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
         GROUP BY hour
         ORDER BY hour
     ");
@@ -98,6 +98,19 @@ try {
     ");
     $stmt->execute([$since]);
     $stats['alerts_by_host'] = $stmt->fetchAll();
+
+    // Events by host
+    $stmt = $db->prepare("
+        SELECT COALESCE(m.machine_id, 'NeznĂˇmĂ˝') as host, COALESCE(SUM(a.events_count), 0) as count
+        FROM alerts a
+        LEFT JOIN machines m ON a.machine_alerts = m.id
+        WHERE a.created_at >= ?
+        GROUP BY m.machine_id
+        ORDER BY count DESC
+        LIMIT 7
+    ");
+    $stmt->execute([$since]);
+    $stats['events_by_host'] = $stmt->fetchAll();
 
     jsonResponse($stats);
 

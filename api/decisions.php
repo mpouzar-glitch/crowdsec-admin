@@ -57,7 +57,7 @@ try {
                     a.id as alert_id
                 FROM decisions d
                 LEFT JOIN alerts a ON d.alert_decisions = a.id
-                WHERE d.until > NOW()
+                WHERE d.until > UTC_TIMESTAMP()
                 ORDER BY d.created_at DESC
                 LIMIT 10000
             ";
@@ -69,7 +69,8 @@ try {
         // Format for frontend
         $formatted = [];
         foreach ($decisions as $decision) {
-            $expired = strtotime($decision['until']) < time();
+            $untilTs = parseCrowdSecTimestamp($decision['until'] ?? null);
+            $expired = $untilTs !== null && $untilTs < time();
 
             $formatted[] = [
                 'id' => $decision['id'],

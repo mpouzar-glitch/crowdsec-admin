@@ -3,7 +3,7 @@
 // PHP 8.4 null safety helpers
 if (!function_exists('safe_strtotime')) {
     function safe_strtotime($datetime) {
-        return $datetime ? strtotime($datetime) : time();
+        return $datetime ? parseCrowdSecTimestamp($datetime) ?? time() : time();
     }
 }
 
@@ -59,17 +59,55 @@ function parseGoDuration($str) {
     return $totalMs;
 }
 
+function parseCrowdSecDateTime($value): ?DateTimeImmutable {
+    if ($value === null || $value === '') {
+        return null;
+    }
+
+    $appEnv = loadEnv();
+    $localTimezone = new DateTimeZone($appEnv['TIMEZONE'] ?? 'Europe/Prague');
+
+    if (is_numeric($value)) {
+        try {
+            return (new DateTimeImmutable('@' . (int) $value))->setTimezone($localTimezone);
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+
+    $stringValue = trim((string) $value);
+    if ($stringValue === '') {
+        return null;
+    }
+
+    try {
+        $hasTimezone = preg_match('/(?:Z|[+\-]\d{2}:\d{2}|[+\-]\d{4})$/', $stringValue) === 1;
+        $sourceTimezone = $hasTimezone ? null : new DateTimeZone('UTC');
+        $date = new DateTimeImmutable($stringValue, $sourceTimezone ?: null);
+        return $date->setTimezone($localTimezone);
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function parseCrowdSecTimestamp($value): ?int {
+    $date = parseCrowdSecDateTime($value);
+    return $date?->getTimestamp();
+}
+
 function formatDateTime($value, $fallback = '-') {
     if (!$value) {
         return $fallback;
     }
 
-    $timestamp = is_numeric($value) ? (int) $value : strtotime((string) $value);
-    if (!$timestamp) {
+    $date = $value instanceof DateTimeInterface
+        ? DateTimeImmutable::createFromInterface($value)
+        : parseCrowdSecDateTime($value);
+    if (!$date) {
         return $fallback;
     }
 
-    return date('d.m.Y H:i', $timestamp);
+    return $date->format('d.m.Y H:i');
 }
 
 function formatTime($value, $fallback = '-') {
@@ -77,12 +115,14 @@ function formatTime($value, $fallback = '-') {
         return $fallback;
     }
 
-    $timestamp = is_numeric($value) ? (int) $value : strtotime((string) $value);
-    if (!$timestamp) {
+    $date = $value instanceof DateTimeInterface
+        ? DateTimeImmutable::createFromInterface($value)
+        : parseCrowdSecDateTime($value);
+    if (!$date) {
         return $fallback;
     }
 
-    return date('H:i', $timestamp);
+    return $date->format('H:i');
 }
 
 function formatAlertDuration($startedAt, $stoppedAt) {
@@ -99,8 +139,8 @@ function formatAlertDuration($startedAt, $stoppedAt) {
         return "start: {$startLabel} trvání -";
     }
 
-    $start = strtotime((string) $startedAt);
-    $stop = strtotime((string) $stoppedAt);
+    $start = parseCrowdSecTimestamp($startedAt);
+    $stop = parseCrowdSecTimestamp($stoppedAt);
     if (!$start || !$stop || $stop < $start) {
         return "start: {$startLabel} trvání -";
     }
@@ -123,8 +163,8 @@ function formatAlertDurationLabel($startedAt, $stoppedAt) {
         return '-';
     }
 
-    $start = strtotime((string) $startedAt);
-    $stop = strtotime((string) $stoppedAt);
+    $start = parseCrowdSecTimestamp($startedAt);
+    $stop = parseCrowdSecTimestamp($stoppedAt);
     if (!$start || !$stop || $stop < $start) {
         return '-';
     }
@@ -604,6 +644,27 @@ function jsonResponse($data, $statusCode = 200) {
     header('Content-Type: application/json');
     echo json_encode($data);
     exit;
+}
+
+function evaluateMachineHeartbeatStatus(?string $heartbeatValue, int $onlineWindowSeconds = 120): array {
+    $timestamp = null;
+    $ageSeconds = null;
+
+    if (!empty($heartbeatValue)) {
+        $timestamp = parseCrowdSecTimestamp($heartbeatValue);
+        if ($timestamp !== null) {
+            $ageSeconds = time() - $timestamp;
+        }
+    }
+
+    $isOnline = $ageSeconds !== null && $ageSeconds >= 0 && $ageSeconds <= $onlineWindowSeconds;
+
+    return [
+        'is_online' => $isOnline,
+        'status' => $isOnline ? 'Online' : 'Offline',
+        'status_class' => $isOnline ? 'badge-active' : 'badge-expired',
+        'heartbeat_age_seconds' => $ageSeconds,
+    ];
 }
 
 function loadEnv() {

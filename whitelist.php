@@ -7,177 +7,113 @@ require_once __DIR__ . '/includes/filter_helper.php';
 
 requireLogin();
 
-const UINT32_MAX = 0xFFFFFFFF;
-const UINT32_BASE = 4294967296;
-const SIGNED_INT64_MAX = 9223372036854775807;
-const SIGNED_INT64_OFFSET = -9223372036854775807;
+function executeCscliCommand(array $arguments): array {
+    $escapedArguments = array_map(static fn(string $argument): string => escapeshellarg($argument), $arguments);
+    $command = 'sudo cscli ' . implode(' ', $escapedArguments) . ' 2>&1';
 
-function ipToUnsignedLong($ip) {
-    $long = ip2long($ip);
-    if ($long === false) {
-        return null;
-    }
-    return (int) sprintf('%u', $long);
+    $output = [];
+    $exitCode = 1;
+    exec($command, $output, $exitCode);
+
+    return [
+        'command' => $command,
+        'output' => trim(implode(PHP_EOL, $output)),
+        'exit_code' => $exitCode,
+    ];
 }
 
-function ipv6ToUint32Parts($ip) {
-    $packed = inet_pton($ip);
-    if ($packed === false) {
-        return null;
-    }
-    $parts = unpack('N4', $packed);
-    return array_values($parts);
-}
-
-function unsigned64ToBiasedSigned(int $high32, int $low32): int {
-    if ($high32 === UINT32_MAX && $low32 === UINT32_MAX) {
-        return SIGNED_INT64_MAX;
-    }
-    if ($high32 >= 0x80000000) {
-        $highOffset = $high32 - 0x80000000;
-        return (int) ($highOffset * UINT32_BASE + $low32 + 1);
-    }
-    return (int) ($high32 * UINT32_BASE + $low32 + SIGNED_INT64_OFFSET);
-}
-
-function applyIpv6PrefixMask(array $parts, int $suffix): array {
-    $startParts = [];
-    $endParts = [];
-    $remaining = $suffix;
-
-    foreach ($parts as $part) {
-        if ($remaining >= 32) {
-            $mask = UINT32_MAX;
-        } elseif ($remaining <= 0) {
-            $mask = 0;
-        } else {
-            $mask = (UINT32_MAX << (32 - $remaining)) & UINT32_MAX;
-        }
-
-        $startParts[] = $part & $mask;
-        $endParts[] = $part | (~$mask & UINT32_MAX);
-        $remaining -= 32;
-    }
-
-    return [$startParts, $endParts];
-}
-
-function parseAllowListValue($value) {
-    $value = trim($value);
-    if ($value === '') {
-        return ['error' => 'Value is required'];
-    }
-
-    if (strpos($value, '/') !== false) {
-        [$ip, $suffix] = array_pad(explode('/', $value, 2), 2, null);
-        $ip = trim((string) $ip);
-        $suffix = trim((string) $suffix);
-
-        if ($suffix === '' || !ctype_digit($suffix)) {
-            return ['error' => 'Invalid subnet suffix'];
-        }
-
-        $suffix = (int) $suffix;
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            if ($suffix < 0 || $suffix > 32) {
-                return ['error' => 'Subnet suffix out of range'];
-            }
-
-            $ipLong = ipToUnsignedLong($ip);
-            if ($ipLong === null) {
-                return ['error' => 'Invalid IPv4 address'];
-            }
-
-            if ($suffix === 0) {
-                $startIp = 0;
-                $endIp = UINT32_MAX;
-            } else {
-                $mask = (UINT32_MAX << (32 - $suffix)) & UINT32_MAX;
-                $startIp = $ipLong & $mask;
-                $endIp = $startIp + (1 << (32 - $suffix)) - 1;
-            }
-
-            return [
-                'start_ip' => unsigned64ToBiasedSigned(0, (int) $startIp),
-                'end_ip' => unsigned64ToBiasedSigned(0, (int) $endIp),
-                'start_suffix' => unsigned64ToBiasedSigned(0, 0),
-                'end_suffix' => unsigned64ToBiasedSigned(0, 0),
-                'ip_size' => 4
-            ];
-        }
-
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            if ($suffix < 0 || $suffix > 128) {
-                return ['error' => 'Subnet suffix out of range'];
-            }
-
-            $parts = ipv6ToUint32Parts($ip);
-            if ($parts === null) {
-                return ['error' => 'Invalid IPv6 address'];
-            }
-
-            [$startParts, $endParts] = applyIpv6PrefixMask($parts, $suffix);
-
-            return [
-                'start_ip' => unsigned64ToBiasedSigned($startParts[0], $startParts[1]),
-                'end_ip' => unsigned64ToBiasedSigned($endParts[0], $endParts[1]),
-                'start_suffix' => unsigned64ToBiasedSigned($startParts[2], $startParts[3]),
-                'end_suffix' => unsigned64ToBiasedSigned($endParts[2], $endParts[3]),
-                'ip_size' => 16
-            ];
-        }
-
-        return ['error' => 'Invalid IP address'];
-    }
-
-    if (filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-        $ipLong = ipToUnsignedLong($value);
-        if ($ipLong === null) {
-            return ['error' => 'Invalid IPv4 address'];
-        }
-
-        return [
-            'start_ip' => unsigned64ToBiasedSigned(0, $ipLong),
-            'end_ip' => unsigned64ToBiasedSigned(0, $ipLong),
-            'start_suffix' => unsigned64ToBiasedSigned(0, 0),
-            'end_suffix' => unsigned64ToBiasedSigned(0, 0),
-            'ip_size' => 4
-        ];
-    }
-
-    if (filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-        $parts = ipv6ToUint32Parts($value);
-        if ($parts === null) {
-            return ['error' => 'Invalid IPv6 address'];
-        }
-
-        return [
-            'start_ip' => unsigned64ToBiasedSigned($parts[0], $parts[1]),
-            'end_ip' => unsigned64ToBiasedSigned($parts[0], $parts[1]),
-            'start_suffix' => unsigned64ToBiasedSigned($parts[2], $parts[3]),
-            'end_suffix' => unsigned64ToBiasedSigned($parts[2], $parts[3]),
-            'ip_size' => 16
-        ];
-    }
-
-    return ['error' => 'Invalid IP address'];
-}
-
-function getDefaultAllowListId($db) {
-    $stmt = $db->query('SELECT id FROM allow_lists ORDER BY id ASC LIMIT 1');
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row ? (int) $row['id'] : null;
-}
-
-function allowListExists($db, $allowListId) {
-    $stmt = $db->prepare('SELECT id FROM allow_lists WHERE id = ?');
+function getAllowListById(PDO $db, int $allowListId): ?array {
+    $stmt = $db->prepare('SELECT id, name FROM allow_lists WHERE id = ?');
     $stmt->execute([$allowListId]);
-    return (bool) $stmt->fetch(PDO::FETCH_ASSOC);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+function executeCscliAllowlistAdd(string $listName, string $cidr, string $reason = ''): array {
+    $description = $reason !== '' ? $reason : 'manual';
+    return executeCscliCommand(['allowlists', 'add', $listName, $cidr, '-d', $description]);
+}
+
+function executeCscliAllowlistDelete(string $listName, string $cidr): array {
+    return executeCscliCommand(['allowlists', 'remove', $listName, $cidr]);
+}
+
+function fetchAllowListItemsFromCscli(string $listName): array {
+    $result = executeCscliCommand(['allowlists', 'inspect', $listName, '-o', 'json']);
+    if ($result['exit_code'] !== 0) {
+        $message = $result['output'] !== '' ? $result['output'] : 'cscli inspect vratilo chybu bez vystupu.';
+        throw new Exception($message);
+    }
+
+    $decoded = json_decode($result['output'], true);
+    if (!is_array($decoded)) {
+        throw new Exception('Nepodarilo se zpracovat JSON vystup z cscli allowlists inspect.');
+    }
+
+    $records = $decoded['items'] ?? [];
+    $resolvedListName = (string) ($decoded['name'] ?? $listName);
+    $listUpdatedAt = (string) ($decoded['updated_at'] ?? '');
+
+    $items = [];
+    foreach ($records as $index => $record) {
+        if (!is_array($record)) {
+            continue;
+        }
+
+        $rawValue = trim((string) ($record['value'] ?? ''));
+        if ($rawValue === '') {
+            continue;
+        }
+
+        $items[] = [
+            'id' => $index + 1,
+            'created_at' => (string) ($record['created_at'] ?? ''),
+            'updated_at' => $listUpdatedAt,
+            'expires_at' => (string) ($record['expiration'] ?? ''),
+            'reason' => (string) ($record['description'] ?? ''),
+            'cidr' => $rawValue,
+            'list_name' => $resolvedListName,
+        ];
+    }
+
+    return [
+        'items' => $items,
+        'debug' => $result,
+    ];
+}
+
+function formatWhitelistExpiration(?string $value): string {
+    $value = trim((string) $value);
+    if ($value === '' || strtolower($value) === 'never' || str_starts_with($value, '0001-01-01')) {
+        return 'never';
+    }
+
+    return formatDateTime($value);
+}
+
+function formatWhitelistCreatedAt(?string $value): string {
+    $value = trim((string) $value);
+    if ($value === '') {
+        return '-';
+    }
+
+    return formatDateTime($value);
+}
+
+function formatWhitelistUpdatedAt(?string $value): string {
+    $value = trim((string) $value);
+    if ($value === '') {
+        return '-';
+    }
+
+    return formatDateTime($value);
 }
 
 $env = loadEnv();
 $appTitle = $env['APP_TITLE'] ?? 'CrowdSec Admin';
 $flash = getFlashMessage();
+$filterSessionKey = 'whitelistfilters';
+initFilterSession($filterSessionKey);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -185,97 +121,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'add') {
         $cidr = trim((string) ($_POST['cidr'] ?? ''));
         $reason = trim((string) ($_POST['reason'] ?? ''));
-        $expiresAtRaw = trim((string) ($_POST['expires_at'] ?? ''));
-        $allowListId = $_POST['allow_list_id'] ?? null;
+        $allowListId = (int) ($_POST['allow_list_id'] ?? 0);
 
-        $expiresAt = null;
-        if ($expiresAtRaw !== '') {
-            $expiresAt = date('Y-m-d H:i:s', strtotime($expiresAtRaw));
-        }
+        if ($cidr === '') {
+            setFlashMessage('error', 'CIDR nebo IP adresa je povinna.');
+        } elseif (!filter_var(str_contains($cidr, '/') ? strtok($cidr, '/') : $cidr, FILTER_VALIDATE_IP)) {
+            setFlashMessage('error', 'Zadejte platnou IP adresu nebo CIDR rozsah.');
+        } else {
+            try {
+                $db = Database::getInstance()->getConnection();
+                $allowList = getAllowListById($db, $allowListId);
+                if ($allowList === null) {
+                    throw new Exception('Vybrany whitelist nebyl nalezen.');
+                }
 
-        try {
-            $db = Database::getInstance()->getConnection();
-            $parsed = parseAllowListValue($cidr);
-            if (isset($parsed['error'])) {
-                throw new Exception($parsed['error']);
+                $result = executeCscliAllowlistAdd((string) $allowList['name'], $cidr, $reason);
+                if ($result['exit_code'] !== 0) {
+                    $message = $result['output'] !== '' ? $result['output'] : 'cscli vratilo chybu bez vystupu.';
+                    throw new Exception($message);
+                }
+
+                auditLog('whitelist.add', [
+                    'cidr' => $cidr,
+                    'reason' => $reason !== '' ? $reason : 'manual',
+                    'allow_list_id' => (int) $allowList['id'],
+                    'allow_list_name' => (string) $allowList['name'],
+                    'result' => $result['output'],
+                ]);
+                setFlashMessage('success', 'Whitelist polozka byla pridana pres cscli.');
+            } catch (Exception $e) {
+                setFlashMessage('error', 'Nepodarilo se pridat polozku: ' . $e->getMessage());
             }
-
-            if ($allowListId === null || $allowListId === '') {
-                $allowListId = getDefaultAllowListId($db);
-            }
-            if (!$allowListId || !allowListExists($db, $allowListId)) {
-                throw new Exception('Neexistuje žádný whitelist. Vytvořte ho nejdříve (např. cscli allowlist create).');
-            }
-
-            $db->beginTransaction();
-
-            $stmt = $db->prepare('
-                INSERT INTO allow_list_items (created_at, updated_at, expires_at, comment, value, start_ip, end_ip, start_suffix, end_suffix, ip_size)
-                VALUES (NOW(), NOW(), :expires_at, :comment, :value, :start_ip, :end_ip, :start_suffix, :end_suffix, :ip_size)
-            ');
-            $stmt->execute([
-                ':expires_at' => $expiresAt ?: null,
-                ':comment' => $reason !== '' ? $reason : null,
-                ':value' => $cidr,
-                ':start_ip' => $parsed['start_ip'],
-                ':end_ip' => $parsed['end_ip'],
-                ':start_suffix' => $parsed['start_suffix'],
-                ':end_suffix' => $parsed['end_suffix'],
-                ':ip_size' => $parsed['ip_size']
-            ]);
-
-            $id = $db->lastInsertId();
-
-            $stmt = $db->prepare('
-                INSERT INTO allow_list_allowlist_items (allow_list_id, allow_list_item_id)
-                VALUES (:allow_list_id, :allow_list_item_id)
-            ');
-            $stmt->execute([
-                ':allow_list_id' => $allowListId,
-                ':allow_list_item_id' => $id
-            ]);
-
-            $db->commit();
-            auditLog('whitelist.add', [
-                'id' => $id,
-                'cidr' => $cidr,
-                'reason' => $reason,
-                'expires_at' => $expiresAt,
-                'allow_list_id' => $allowListId
-            ]);
-            setFlashMessage('success', 'Whitelist položka byla přidána.');
-        } catch (Exception $e) {
-            if (isset($db) && $db->inTransaction()) {
-                $db->rollBack();
-            }
-            setFlashMessage('error', 'Nepodařilo se uložit položku: ' . $e->getMessage());
         }
     }
 
     if ($action === 'delete') {
-        $id = (int) ($_POST['id'] ?? 0);
-        if ($id > 0) {
+        $cidr = trim((string) ($_POST['cidr'] ?? ''));
+        $listName = trim((string) ($_POST['list_name'] ?? ''));
+        if ($cidr !== '' && $listName !== '') {
             try {
-                $db = Database::getInstance()->getConnection();
-                $stmt = $db->prepare('
-                    SELECT i.id, i.value AS cidr, i.comment AS reason, i.expires_at, ali.allow_list_id
-                    FROM allow_list_allowlist_items ali
-                    JOIN allow_list_items i ON i.id = ali.allow_list_item_id
-                    WHERE i.id = ?
-                ');
-                $stmt->execute([$id]);
-                $item = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-
-                $stmt = $db->prepare('DELETE FROM allow_list_items WHERE id = ?');
-                $stmt->execute([$id]);
+                $result = executeCscliAllowlistDelete($listName, $cidr);
+                if ($result['exit_code'] !== 0) {
+                    $message = $result['output'] !== '' ? $result['output'] : 'cscli delete vratilo chybu bez vystupu.';
+                    throw new Exception($message);
+                }
 
                 auditLog('whitelist.delete', [
-                    'id' => $id,
-                    'item' => $item
+                    'cidr' => $cidr,
+                    'list_name' => $listName,
+                    'result' => $result['output'],
                 ]);
-                setFlashMessage('success', 'Whitelist položka byla odstraněna.');
+                setFlashMessage('success', 'Whitelist polozka byla odstranena pres cscli.');
             } catch (Exception $e) {
-                setFlashMessage('error', 'Nepodařilo se odstranit položku: ' . $e->getMessage());
+                setFlashMessage('error', 'Nepodarilo se odstranit polozku: ' . $e->getMessage());
             }
         }
     }
@@ -285,92 +183,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $filters = [
-    'cidr' => trim((string) ($_GET['cidr'] ?? '')),
-    'reason' => trim((string) ($_GET['reason'] ?? '')),
-    'list' => trim((string) ($_GET['list'] ?? ''))
+    'cidr' => trim((string) getFilterValue('cidr', $filterSessionKey)),
+    'reason' => trim((string) getFilterValue('reason', $filterSessionKey)),
+    'list' => trim((string) getFilterValue('list', $filterSessionKey)),
 ];
 
 $perPage = (int) ($_GET['per_page'] ?? 50);
 $perPage = max(10, min($perPage, 200));
 $page = max(1, (int) ($_GET['page'] ?? 1));
+$debugEnabled = isset($_GET['debug']) && $_GET['debug'] === '1';
 
 $items = [];
 $totalItems = 0;
 $totalPages = 1;
 $allowLists = [];
+$debugInfo = null;
+$loadError = '';
 
 try {
     $db = Database::getInstance()->getConnection();
     $allowLists = $db->query('SELECT id, name FROM allow_lists ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);
 
-    $conditions = [];
-    $params = [];
+    $selectedListName = $filters['list'] !== '' ? $filters['list'] : 'local_whitelist';
+    $inspectResult = fetchAllowListItemsFromCscli($selectedListName);
+    $items = $inspectResult['items'];
+    $debugInfo = $inspectResult['debug'];
 
-    $filterDefinitions = [
-        [
-            'key' => 'cidr',
-            'column' => 'i.value',
-            'operator' => 'like',
-            'lowercase' => true
-        ],
-        [
-            'key' => 'reason',
-            'column' => 'i.comment',
-            'operator' => 'like',
-            'lowercase' => true
-        ],
-        [
-            'key' => 'list',
-            'column' => 'l.name',
-            'operator' => 'like',
-            'lowercase' => true
-        ],
-    ];
+    $items = array_values(array_filter($items, static function (array $item) use ($filters): bool {
+        $cidrMatch = $filters['cidr'] === '' || str_contains(mb_strtolower((string) $item['cidr']), mb_strtolower($filters['cidr']));
+        $reasonMatch = $filters['reason'] === '' || str_contains(mb_strtolower((string) ($item['reason'] ?? '')), mb_strtolower($filters['reason']));
+        $listMatch = $filters['list'] === '' || str_contains(mb_strtolower((string) $item['list_name']), mb_strtolower($filters['list']));
+        return $cidrMatch && $reasonMatch && $listMatch;
+    }));
 
-    $conditions = array_merge($conditions, buildFilterConditions($filters, $filterDefinitions, $params));
-    $whereSql = buildWhereClause($conditions);
-
-    $countStmt = $db->prepare("
-        SELECT COUNT(*)
-        FROM allow_list_allowlist_items ali
-        JOIN allow_list_items i ON i.id = ali.allow_list_item_id
-        JOIN allow_lists l ON l.id = ali.allow_list_id
-        {$whereSql}
-    ");
-    foreach ($params as $key => $value) {
-        $countStmt->bindValue($key, $value);
-    }
-    $countStmt->execute();
-    $totalItems = (int) $countStmt->fetchColumn();
+    $totalItems = count($items);
     $totalPages = max(1, (int) ceil($totalItems / $perPage));
     $page = min($page, $totalPages);
     $offset = ($page - 1) * $perPage;
-
-    $stmt = $db->prepare("
-        SELECT
-            i.id,
-            i.created_at,
-            i.updated_at,
-            i.expires_at,
-            i.comment AS reason,
-            i.value AS cidr,
-            l.name AS list_name
-        FROM allow_list_allowlist_items ali
-        JOIN allow_list_items i ON i.id = ali.allow_list_item_id
-        JOIN allow_lists l ON l.id = ali.allow_list_id
-        {$whereSql}
-        ORDER BY i.created_at DESC
-        LIMIT :limit OFFSET :offset
-    ");
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $stmt->execute();
-    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $items = array_slice($items, $offset, $perPage);
 } catch (Exception $e) {
-    error_log('Whitelist page error: ' . $e->getMessage());
+    $loadError = $e->getMessage();
+    error_log('Whitelist page error: ' . $loadError);
 }
 
 $buildQuery = function (array $overrides = []) use ($filters, $perPage) {
@@ -378,156 +231,238 @@ $buildQuery = function (array $overrides = []) use ($filters, $perPage) {
         'cidr' => $filters['cidr'],
         'reason' => $filters['reason'],
         'list' => $filters['list'],
-        'per_page' => $perPage
+        'per_page' => $perPage,
     ], $overrides);
 
     return buildQueryString($query);
 };
 
+$whitelistFilterDefinitions = [
+    'cidr' => [
+        'key' => 'cidr',
+        'type' => 'text',
+        'label' => 'IP / CIDR',
+        'icon' => 'fas fa-network-wired',
+        'placeholder' => 'napr. 85.163.83.0/24',
+        'value' => $filters['cidr'],
+        'class' => 'filter-group',
+        'max_width' => 190,
+    ],
+    'reason' => [
+        'key' => 'reason',
+        'type' => 'text',
+        'label' => 'Duvod',
+        'icon' => 'fas fa-note-sticky',
+        'placeholder' => 'napr. MILNET /24',
+        'value' => $filters['reason'],
+        'class' => 'filter-group',
+        'max_width' => 220,
+    ],
+    'list' => [
+        'key' => 'list',
+        'type' => 'text',
+        'label' => 'Whitelist',
+        'icon' => 'fas fa-list-check',
+        'placeholder' => 'napr. local_whitelist',
+        'value' => $filters['list'],
+        'class' => 'filter-group',
+        'max_width' => 190,
+    ],
+    '_meta' => [
+        'form_id' => 'whitelistFilterForm',
+        'reset_url' => '/whitelist.php?reset_filters=1',
+    ],
+];
+
 renderPageStart($appTitle . ' - Whitelist', 'whitelist', $appTitle);
 ?>
-    <section class="page-header">
-        <div>
-            <h1>Whitelist</h1>
-            <p class="muted">Povolené IP adresy nebo subnety. Celkem <strong><?= $totalItems ?></strong> položek.</p>
-        </div>
-        <div class="toolbar">
-            <a class="btn" href="/whitelist.php?<?= htmlspecialchars($buildQuery()) ?>">Obnovit</a>
-        </div>
-    </section>
+    <div class="container">
+        <section class="page-header">
+            <div>
+                <h1>Whitelist</h1>
+                <p class="muted">Prehled povolenych IP adres a subnetu. Celkem <strong><?= $totalItems ?></strong> polozek.</p>
+            </div>
+            <div class="toolbar">
+                <button type="button" class="btn" onclick="void showWhitelistAddModal()">Pridat polozku</button>
+            </div>
+        </section>
 
-    <?php if ($flash): ?>
-        <div class="flash-message <?= htmlspecialchars($flash['type']) ?>">
-            <?= htmlspecialchars($flash['message']) ?>
-        </div>
-    <?php endif; ?>
+        <?php if ($flash): ?>
+            <div class="flash-message <?= htmlspecialchars($flash['type']) ?>">
+                <?= htmlspecialchars($flash['message']) ?>
+            </div>
+        <?php endif; ?>
 
-    <section class="card">
-        <div class="card-body">
-            <p class="muted">
-                Whitelist musí být nejdříve založen v tabulce allow_lists (doporučeno přes <code>cscli allowlist create</code>),
-                následně se přidávají položky a propojí se přes allow_list_allowlist_items.
-                Ukládáme je ve stejném formátu jako <code>cscli</code> (včetně IPv6), takže není potřeba volat další API příkaz
-                a změny se okamžitě projeví v CrowdSec.
-            </p>
-        </div>
-    </section>
+        <?php if ($loadError !== ''): ?>
+            <div class="flash-message error">
+                <?= htmlspecialchars('Whitelist se nepodarilo nacist: ' . $loadError) ?>
+            </div>
+        <?php endif; ?>
 
-    <section class="card">
-        <div class="card-header">
-            <h2>Přidat položku</h2>
-        </div>
-        <div class="card-body">
-            <form method="post" class="form-grid">
-                <input type="hidden" name="action" value="add">
-                <div class="form-group">
-                    <label>Whitelist</label>
-                    <select name="allow_list_id" required>
-                        <?php foreach ($allowLists as $list): ?>
-                            <option value="<?= (int) $list['id'] ?>">
-                                <?= htmlspecialchars($list['name']) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+        <?php if ($debugEnabled && $debugInfo !== null): ?>
+            <section class="card">
+                <div class="card-header">
+                    <h2>Debug cscli</h2>
                 </div>
-                <div class="form-group">
-                    <label>CIDR</label>
-                    <input type="text" name="cidr" required placeholder="192.168.1.1 nebo 10.0.0.0/24">
+                <div class="card-body">
+                    <p><strong>Prikaz:</strong> <code><?= htmlspecialchars((string) ($debugInfo['command'] ?? '')) ?></code></p>
+                    <p><strong>Exit code:</strong> <?= (int) ($debugInfo['exit_code'] ?? -1) ?></p>
+                    <pre style="white-space: pre-wrap; word-break: break-word; margin: 0;"><?= htmlspecialchars((string) ($debugInfo['output'] ?? '')) ?></pre>
                 </div>
-                <div class="form-group">
-                    <label>Důvod</label>
-                    <input type="text" name="reason" placeholder="např. monitoring">
-                </div>
-                <div class="form-group">
-                    <label>Platnost do</label>
-                    <input type="datetime-local" name="expires_at">
-                </div>
-                <button type="submit" class="btn">Uložit</button>
-            </form>
-        </div>
-    </section>
+            </section>
+        <?php endif; ?>
 
-    <form class="table-filters" method="get">
-        <div class="filter-group">
-            <label for="whitelistFilterCidr">CIDR</label>
-            <input type="text" id="whitelistFilterCidr" name="cidr" placeholder="např. 10.0.0.0/24" value="<?= htmlspecialchars($filters['cidr']) ?>">
-        </div>
-        <div class="filter-group">
-            <label for="whitelistFilterReason">Důvod</label>
-            <input type="text" id="whitelistFilterReason" name="reason" placeholder="např. interní servis" value="<?= htmlspecialchars($filters['reason']) ?>">
-        </div>
-        <div class="filter-group">
-            <label for="whitelistFilterList">Whitelist</label>
-            <input type="text" id="whitelistFilterList" name="list" placeholder="např. my_whitelist" value="<?= htmlspecialchars($filters['list']) ?>">
-        </div>
-        <div class="filter-actions">
-            <button class="btn btn-ghost" type="submit">Filtrovat</button>
-            <a class="btn btn-ghost" href="/whitelist.php">Vyčistit filtry</a>
-        </div>
-    </form>
+        <?= renderSearchFilters($whitelistFilterDefinitions) ?>
 
-    <section class="card">
-        <div class="card-body">
-            <table class="data-table data-table-compact" id="whitelistTable">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Whitelist</th>
-                        <th>CIDR</th>
-                        <th>Důvod</th>
-                        <th>Platnost do</th>
-                        <th>Vytvořeno</th>
-                        <th>Aktualizováno</th>
-                        <th>Akce</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($items)): ?>
-                        <tr><td colspan="8" class="muted">Žádná data</td></tr>
-                    <?php else: ?>
-                        <?php foreach ($items as $item): ?>
-                            <tr>
-                                <td><?= (int) $item['id'] ?></td>
-                                <td><?= htmlspecialchars((string) $item['list_name']) ?></td>
-                                <td><?= htmlspecialchars((string) $item['cidr']) ?></td>
-                                <td><?= htmlspecialchars((string) ($item['reason'] ?? '-')) ?></td>
-                                <td><?= htmlspecialchars(formatDateTime($item['expires_at'])) ?></td>
-                                <td><?= htmlspecialchars(formatDateTime($item['created_at'])) ?></td>
-                                <td><?= htmlspecialchars(formatDateTime($item['updated_at'])) ?></td>
-                                <td>
-                                    <form method="post" onsubmit="return confirm('Opravdu chcete odstranit tuto položku?');">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
-                                        <button type="submit" class="btn btn-ghost btn-small">Smazat</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </section>
+        <section class="card">
+            <div class="card-body">
+                <table class="data-table data-table-compact alerts-table" id="whitelistTable">
+                    <?php
+                    echo renderMessagesTableHeader([
+                        'columns' => [
+                            ['key' => 'created_at', 'label' => 'Vytvoreno', 'sortable' => false],
+                            ['key' => 'list_name', 'label' => 'Whitelist', 'sortable' => false],
+                            ['key' => 'cidr', 'label' => 'IP / CIDR', 'sortable' => false],
+                            ['key' => 'reason', 'label' => 'Duvod', 'sortable' => false],
+                            ['key' => 'expires_at', 'label' => 'Expirace', 'sortable' => false],
+                            ['key' => 'updated_at', 'label' => 'Aktualizovano', 'sortable' => false],
+                            ['key' => 'actions', 'label' => 'Akce', 'sortable' => false],
+                        ],
+                    ]);
+                    ?>
+                    <tbody>
+                        <?php if (empty($items)): ?>
+                            <tr><td colspan="7" class="muted">Zadna data</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($items as $item): ?>
+                                <?php
+                                $cidrValue = (string) ($item['cidr'] ?? '');
+                                $ipForWhois = $cidrValue;
+                                if (str_contains($cidrValue, '/')) {
+                                    $ipForWhois = (string) strtok($cidrValue, '/');
+                                }
+                                $listName = (string) ($item['list_name'] ?? '');
+                                $reason = trim((string) ($item['reason'] ?? ''));
+                                $listLink = $listName !== ''
+                                    ? '/whitelist.php?' . buildQueryString(array_merge($filters, ['list' => $listName, 'page' => 1]))
+                                    : '';
+                                $cidrLink = $cidrValue !== ''
+                                    ? '/whitelist.php?' . buildQueryString(array_merge($filters, ['cidr' => $cidrValue, 'page' => 1]))
+                                    : '';
+                                ?>
+                                <tr>
+                                    <td><?= htmlspecialchars(formatWhitelistCreatedAt($item['created_at'])) ?></td>
+                                    <td>
+                                        <?php if ($listLink !== ''): ?>
+                                            <a href="<?= htmlspecialchars($listLink) ?>" class="filter-link" title="Filtrovat podle whitelistu">
+                                                <?= htmlspecialchars($listName) ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <?= htmlspecialchars($listName !== '' ? $listName : '-') ?>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($cidrLink !== ''): ?>
+                                            <span class="ip-cell">
+                                                <a href="<?= htmlspecialchars($cidrLink) ?>" class="filter-link" title="Filtrovat podle IP nebo CIDR">
+                                                    <?= htmlspecialchars($cidrValue) ?>
+                                                </a>
+                                                <?php if ($ipForWhois !== '' && filter_var($ipForWhois, FILTER_VALIDATE_IP)): ?>
+                                                    <button
+                                                        type="button"
+                                                        class="icon-btn icon-btn-mini icon-btn-primary"
+                                                        onclick="void showIpIntelModal(event, '<?= htmlspecialchars($ipForWhois, ENT_QUOTES) ?>')"
+                                                        aria-label="WHOIS detail IP <?= htmlspecialchars($ipForWhois) ?>"
+                                                        title="WHOIS detail">
+                                                        <i class="fa-solid fa-circle-info"></i>
+                                                    </button>
+                                                <?php endif; ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <?= htmlspecialchars($cidrValue !== '' ? $cidrValue : '-') ?>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= htmlspecialchars($reason !== '' ? $reason : '-') ?></td>
+                                    <td><?= htmlspecialchars(formatWhitelistExpiration($item['expires_at'])) ?></td>
+                                    <td><?= htmlspecialchars(formatWhitelistUpdatedAt($item['updated_at'])) ?></td>
+                                    <td>
+                                        <div class="table-actions">
+                                            <form method="post" onsubmit="return confirm('Opravdu chcete odstranit tuto polozku?');">
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="cidr" value="<?= htmlspecialchars($cidrValue) ?>">
+                                                <input type="hidden" name="list_name" value="<?= htmlspecialchars($listName) ?>">
+                                                <button type="submit" class="icon-btn icon-btn-danger" aria-label="Odstranit polozku" title="Odstranit polozku">
+                                                    <i class="fa-solid fa-trash"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
 
-    <?php if ($totalPages > 1): ?>
-        <div class="pagination">
-            <?php
-                $pages = buildPaginationPages($page, $totalPages);
-                $prevPage = max(1, $page - 1);
-                $nextPage = min($totalPages, $page + 1);
-            ?>
-            <a class="pagination-link <?= $page === 1 ? 'disabled' : '' ?>" href="/whitelist.php?<?= htmlspecialchars($buildQuery(['page' => $prevPage])) ?>">&laquo; Předchozí</a>
-            <?php foreach ($pages as $pageNumber): ?>
-                <?php if ($pageNumber === '...'): ?>
-                    <span class="pagination-ellipsis">…</span>
-                <?php else: ?>
-                    <a class="pagination-link <?= (int) $pageNumber === $page ? 'active' : '' ?>" href="/whitelist.php?<?= htmlspecialchars($buildQuery(['page' => $pageNumber])) ?>">
-                        <?= $pageNumber ?>
-                    </a>
-                <?php endif; ?>
-            <?php endforeach; ?>
-            <a class="pagination-link <?= $page === $totalPages ? 'disabled' : '' ?>" href="/whitelist.php?<?= htmlspecialchars($buildQuery(['page' => $nextPage])) ?>">Další &raquo;</a>
+        <?= renderPagination([
+            'current' => $page,
+            'total' => $totalPages,
+            'buildQuery' => fn(array $params) => $buildQuery($params),
+            'baseUrl' => '/whitelist.php',
+        ]) ?>
+
+        <div class="modal" id="ipIntelModal" aria-hidden="true">
+            <div class="modal-content">
+                <button type="button" class="modal-close" aria-label="Zavrit detail IP">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div id="ipIntelDetail"></div>
+            </div>
         </div>
-    <?php endif; ?>
+
+        <div class="modal" id="whitelistAddModal" aria-hidden="true">
+            <div class="modal-content">
+                <button type="button" class="modal-close" aria-label="Zavrit formular whitelistu">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <h3>Pridat whitelist polozku</h3>
+                <form method="post" class="form-grid">
+                    <input type="hidden" name="action" value="add">
+                    <div class="form-group">
+                        <label for="allowListId">Whitelist</label>
+                        <select id="allowListId" name="allow_list_id" required>
+                            <?php foreach ($allowLists as $list): ?>
+                                <option value="<?= (int) $list['id'] ?>"<?= (string) $list['name'] === 'local_whitelist' ? ' selected' : '' ?>>
+                                    <?= htmlspecialchars((string) $list['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="whitelistCidr">IP nebo CIDR</label>
+                        <input type="text" id="whitelistCidr" name="cidr" required placeholder="85.163.83.0/24">
+                    </div>
+                    <div class="form-group">
+                        <label for="whitelistReason">Duvod</label>
+                        <input type="text" id="whitelistReason" name="reason" placeholder="MILNET /24">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn">Ulozit pres cscli</button>
+                    </div>
+                </form>
+                <p class="muted">
+                    Pouzije se prikaz ve stylu <code>cscli allowlists add local_whitelist 85.163.83.0/24 -d "MILNET /24"</code>.
+                </p>
+            </div>
+        </div>
+    </div>
+    <script>
+    function showWhitelistAddModal() {
+        const modal = document.getElementById('whitelistAddModal');
+        if (!modal) return;
+        modal.classList.add('active');
+    }
+    </script>
 <?php
 renderPageEnd();

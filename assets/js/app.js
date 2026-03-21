@@ -19,6 +19,7 @@ let worldMapData = {
     decisions: { values: {}, max: 0 }
 };
 let sourcesChart = null;
+let eventsByHostChart = null;
 const dashboardState = {
     stats: null,
     alerts: [],
@@ -609,9 +610,36 @@ function updateMapLegend(mode) {
 
 function renderWorldMap() {
     const container = document.getElementById('worldMap');
-    if (!container || typeof jsVectorMap === 'undefined') return;
-
+    if (!container) return;
     const dataset = worldMapData[worldMapMode] || { values: {}, max: 0 };
+    if (typeof jsVectorMap === 'undefined') {
+        if (typeof google !== 'undefined' && google.charts) {
+            google.charts.load('current', { packages: ['geochart'] });
+            google.charts.setOnLoadCallback(() => {
+                const rows = Object.entries(dataset.values || {});
+                if (!rows.length) {
+                    container.innerHTML = '<div class="muted">Pro mapu nejsou zadna geograficka data.</div>';
+                    return;
+                }
+                const data = google.visualization.arrayToDataTable([
+                    ['Country', 'Count'],
+                    ...rows
+                ]);
+                const chart = new google.visualization.GeoChart(container);
+                chart.draw(data, {
+                    backgroundColor: 'transparent',
+                    datalessRegionColor: '#e5e7eb',
+                    defaultColor: '#fef08a',
+                    colorAxis: { colors: ['#fef08a', '#ef4444'] },
+                    legend: 'none'
+                });
+            });
+            updateMapLegend(worldMapMode);
+            return;
+        }
+        container.innerHTML = '<div class="muted">Mapa se nepodarilo nacist: chybi knihovna jsVectorMap.</div>';
+        return;
+    }
     const scale = ['#fef08a', '#ef4444'];
     const selectedRegions = Array.from(dashboardState.filters.countries).map(country => country.toUpperCase());
 
@@ -621,42 +649,78 @@ function renderWorldMap() {
     container.innerHTML = '';
 
     const availableMaps = Object.keys(jsVectorMap.maps || {});
-    const mapName = availableMaps.find(name => name.startsWith('world')) || availableMaps[0];
-    if (!mapName) return;
-
-    worldMap = new jsVectorMap({
-        selector: '#worldMap',
-        map: mapName,
-        zoomButtons: false,
-        backgroundColor: 'transparent',
-        regionsSelectable: true,
-        selectedRegions: selectedRegions,
-        regionStyle: {
-            initial: {
-                fill: '#e5e7eb',
-                stroke: '#ffffff',
-                strokeWidth: 0.6
-            },
-            hover: {
-                fill: '#93c5fd'
-            },
-            selected: {
-                fill: '#1d4ed8'
-            }
-        },
-        series: {
-            regions: [{
-                values: dataset.values,
-                scale: scale,
-                normalizeFunction: 'polynomial'
-            }]
-        },
-        onRegionClick: (event, code) => {
-            if (!code) return;
-            toggleDashboardFilter(dashboardState.filters.countries, code.toUpperCase());
-            renderDashboard();
+    const preferredMaps = ['world', 'world_merc'];
+    const mapName = preferredMaps.find(name => availableMaps.includes(name))
+        || availableMaps.find(name => name.startsWith('world'))
+        || availableMaps[0];
+    if (!mapName) {
+        if (typeof google !== 'undefined' && google.charts) {
+            google.charts.load('current', { packages: ['geochart'] });
+            google.charts.setOnLoadCallback(() => {
+                const rows = Object.entries(dataset.values || {});
+                if (!rows.length) {
+                    container.innerHTML = '<div class="muted">Pro mapu nejsou zadna geograficka data.</div>';
+                    return;
+                }
+                const data = google.visualization.arrayToDataTable([
+                    ['Country', 'Count'],
+                    ...rows
+                ]);
+                const chart = new google.visualization.GeoChart(container);
+                chart.draw(data, {
+                    backgroundColor: 'transparent',
+                    datalessRegionColor: '#e5e7eb',
+                    defaultColor: '#fef08a',
+                    colorAxis: { colors: ['#fef08a', '#ef4444'] },
+                    legend: 'none'
+                });
+            });
+            updateMapLegend(worldMapMode);
+            return;
         }
-    });
+        container.innerHTML = '<div class="muted">Mapa se nepodarilo nacist: neni dostupny zadny mapovy podklad.</div>';
+        return;
+    }
+
+    try {
+        worldMap = new jsVectorMap({
+            selector: '#worldMap',
+            map: mapName,
+            zoomButtons: false,
+            backgroundColor: 'transparent',
+            regionsSelectable: true,
+            selectedRegions: selectedRegions,
+            regionStyle: {
+                initial: {
+                    fill: '#e5e7eb',
+                    stroke: '#ffffff',
+                    strokeWidth: 0.6
+                },
+                hover: {
+                    fill: '#93c5fd'
+                },
+                selected: {
+                    fill: '#1d4ed8'
+                }
+            },
+            series: {
+                regions: [{
+                    values: dataset.values,
+                    scale: scale,
+                    normalizeFunction: 'polynomial'
+                }]
+            },
+            onRegionClick: (event, code) => {
+                if (!code) return;
+                toggleDashboardFilter(dashboardState.filters.countries, code.toUpperCase());
+                renderDashboard();
+            }
+        });
+    } catch (error) {
+        console.error('World map init failed:', error);
+        container.innerHTML = `<div class="muted">Mapa se nepodarilo vykreslit: ${escapeHtml(error.message || 'neznamy problem')}.</div>`;
+        return;
+    }
 
     updateMapLegend(worldMapMode);
 }
@@ -714,6 +778,55 @@ function updateSourcesChart(data) {
                         boxWidth: 12
                     }
                 }
+            },
+            onClick: (event, elements) => {
+                if (!elements.length) return;
+                const index = elements[0].index;
+                toggleDashboardFilter(dashboardState.filters.hosts, hostKeys[index]);
+                renderDashboard();
+            }
+        }
+    });
+}
+
+function updateEventsByHostChart(data) {
+    const ctx = document.getElementById('eventsByHostChart');
+    if (!ctx) return;
+
+    const hostKeys = data.map(row => row.host || 'Neznamy');
+    const labels = hostKeys;
+    const values = data.map(row => Number(row.count || 0));
+    const hasSelection = dashboardState.filters.hosts.size > 0;
+    const activeColor = '#dc2626';
+    const mutedColor = '#fecaca';
+    const colors = hostKeys.map(host => {
+        if (!hasSelection) return activeColor;
+        return dashboardState.filters.hosts.has(host) ? activeColor : mutedColor;
+    });
+
+    if (eventsByHostChart) {
+        eventsByHostChart.destroy();
+    }
+
+    eventsByHostChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Pocet eventu',
+                data: values,
+                backgroundColor: colors,
+                borderRadius: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                y: { beginAtZero: true }
             },
             onClick: (event, elements) => {
                 if (!elements.length) return;
@@ -801,12 +914,9 @@ function showNotification(message, type = 'info') {
 // Dashboard functions
 async function loadDashboard() {
     try {
-        const [stats, alerts] = await Promise.all([
-            apiGet('/stats.php'),
-            apiGet('/alerts.php?limit=0')
-        ]);
+        const stats = await apiGet('/stats.php');
         dashboardState.stats = stats;
-        dashboardState.alerts = alerts || [];
+        dashboardState.alerts = [];
         setupDashboardFilterControls();
         renderDashboard();
 
@@ -989,13 +1099,24 @@ function updateSummaryCards(stats, filteredAlerts, topScenarios, topCountries) {
 
 function renderDashboard() {
     const stats = dashboardState.stats || {};
-    const hasFilters = hasActiveDashboardFilters();
+    const canFilterClientSide = Array.isArray(dashboardState.alerts) && dashboardState.alerts.length > 0;
+    const hasFilters = hasActiveDashboardFilters() && canFilterClientSide;
     const filteredAlerts = applyDashboardFilters(dashboardState.alerts);
     if (hasFilters) {
         const topScenarios = buildTopScenarios(filteredAlerts);
         const topCountries = buildTopCountries(filteredAlerts);
         const topIps = buildTopIps(filteredAlerts);
         const alertsByHost = buildAlertsByHost(filteredAlerts);
+        const eventsByHostCounts = new Map();
+        filteredAlerts.forEach(alert => {
+            const host = getAlertHost(alert);
+            if (!host) return;
+            eventsByHostCounts.set(host, (eventsByHostCounts.get(host) || 0) + Number(alert.events_count || 0));
+        });
+        const eventsByHost = Array.from(eventsByHostCounts.entries())
+            .map(([host, count]) => ({ host, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 7);
         const timelineData = buildTimelineData(filteredAlerts);
 
         updateSummaryCards(stats, filteredAlerts, topScenarios, topCountries);
@@ -1004,6 +1125,7 @@ function renderDashboard() {
         updateCountriesTable(topCountries);
         updateIpsTable(topIps);
         updateSourcesChart(alertsByHost);
+        updateEventsByHostChart(eventsByHost);
 
         worldMapData.alerts = buildWorldMapDatasetFromAlerts(filteredAlerts, 'alerts');
         worldMapData.decisions = buildWorldMapDatasetFromAlerts(filteredAlerts, 'decisions');
@@ -1015,6 +1137,7 @@ function renderDashboard() {
         updateCountriesTable(stats.top_countries || []);
         updateIpsTable(stats.top_ips || []);
         updateSourcesChart(stats.alerts_by_host || []);
+        updateEventsByHostChart(stats.events_by_host || []);
 
         worldMapData.alerts = buildMapDataset(stats.top_countries || []);
         worldMapData.decisions = buildMapDataset(stats.top_decision_countries || []);
@@ -1614,14 +1737,20 @@ async function toggleAlertDecision(id) {
     }
 }
 
-async function extendAlertDecision(id) {
+async function extendAlertDecision(id, sourceIp = '') {
+    const ip = (sourceIp || '').trim();
+    if (ip) {
+        showLongTermBanModal(ip, { reason: 'extend' });
+        return;
+    }
+
     const alert = await apiGet(`/alerts.php?id=${id}`);
     if (!alert) return;
-    
-    const ip = alert.source_ip || '';
+
+    const fallbackIp = (alert.source_ip || '').trim();
     const activeDecisions = (alert.decisions || []).filter(decision => !decision.expired);
-    if (!ip || activeDecisions.length === 0) return;
-    showLongTermBanModal(ip, { reason: 'extend' });
+    if (!fallbackIp || activeDecisions.length === 0) return;
+    showLongTermBanModal(fallbackIp, { reason: 'extend' });
 }
 
 async function addAlertIpToWhitelist(ip) {
@@ -1974,23 +2103,12 @@ async function loadMachines() {
 }
 
 function getMachineStatusBadge(machine) {
-    const statusText = (machine.status || '').trim();
-    let label = statusText;
-    let badgeClass = 'badge-muted';
     const heartbeat = machine.last_heartbeat ? parseUtcDate(machine.last_heartbeat) : null;
     const heartbeatValid = heartbeat && !Number.isNaN(heartbeat.getTime());
-    const isOnline = Boolean(machine.is_validated) && heartbeatValid && (Date.now() - heartbeat.getTime()) <= 120 * 1000;
-
-    if (isOnline) {
-        label = 'Online';
-        badgeClass = 'badge-active';
-    } else {
-        label = 'Offline';
-        badgeClass = 'badge-expired';
-    }
-
-    const validationLabel = machine.is_validated ? 'Validováno' : 'Neověřeno';
-    return `<span class="badge ${badgeClass}">${label}</span> <span class="muted">${validationLabel}</span>`;
+    const isOnline = heartbeatValid && (Date.now() - heartbeat.getTime()) <= 120 * 1000;
+    const badgeClass = isOnline ? 'badge-active' : 'badge-expired';
+    const label = isOnline ? 'Online' : 'Offline';
+    return `<span class="badge ${badgeClass}">${label}</span>`;
 }
 
 function renderMachines() {

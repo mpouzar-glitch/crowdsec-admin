@@ -31,13 +31,12 @@ try {
     $stmt->execute();
 
     $machines = $stmt->fetchAll();
-    $now = time();
-
     foreach ($machines as &$machine) {
-        $heartbeat = $machine['last_heartbeat'] ? strtotime($machine['last_heartbeat']) : null;
-        $isValidated = filter_var($machine['is_validated'], FILTER_VALIDATE_BOOLEAN);
-        $isOnline = $isValidated && $heartbeat && ($now - $heartbeat <= 120);
-        $machine['status'] = $isOnline ? 'Online' : 'Offline';
+        $statusMeta = evaluateMachineHeartbeatStatus($machine['last_heartbeat'] ?? null);
+        $machine['status'] = $statusMeta['status'];
+        $machine['status_class'] = $statusMeta['status_class'];
+        $machine['is_online'] = $statusMeta['is_online'];
+        $machine['heartbeat_age_seconds'] = $statusMeta['heartbeat_age_seconds'];
     }
 
     jsonResponse($machines);

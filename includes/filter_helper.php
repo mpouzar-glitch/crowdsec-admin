@@ -669,7 +669,7 @@ function getExtendedQuarantineStats(PDO $db, array $filters = []): array {
 
         $decisionsSql = "SELECT COUNT(*) AS active_decisions
             FROM decisions
-            WHERE `until` > NOW()
+            WHERE `until` > UTC_TIMESTAMP()
               AND alert_decisions IN (SELECT id FROM alerts {$whereClause})";
         $decisionsStmt = $db->prepare($decisionsSql);
         $decisionsStmt->execute($params);

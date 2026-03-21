@@ -177,6 +177,28 @@ function allowListExists($db, $allowListId) {
     return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
 }
 
+function getAllowListNameById($db, $allowListId) {
+    $stmt = $db->prepare('SELECT name FROM allow_lists WHERE id = ?');
+    $stmt->execute([$allowListId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row['name'] ?? null;
+}
+
+function executeCscliCommand(array $arguments): array {
+    $escapedArguments = array_map(static fn(string $argument): string => escapeshellarg($argument), $arguments);
+    $command = 'sudo cscli ' . implode(' ', $escapedArguments) . ' 2>&1';
+
+    $output = [];
+    $exitCode = 1;
+    exec($command, $output, $exitCode);
+
+    return [
+        'command' => $command,
+        'output' => trim(implode(PHP_EOL, $output)),
+        'exit_code' => $exitCode,
+    ];
+}
+
 try {
     $db = Database::getInstance()->getConnection();
 
@@ -211,7 +233,6 @@ try {
         $input = json_decode(file_get_contents('php://input'), true);
         $value = trim($input['cidr'] ?? ($input['value'] ?? ''));
         $comment = trim($input['reason'] ?? ($input['comment'] ?? ''));
-        $expiresAt = $input['expires_at'] ?? null;
         $allowListId = $input['allow_list_id'] ?? null;
 
         $parsed = parseAllowListValue($value);
@@ -225,45 +246,42 @@ try {
         if (!$allowListId || !allowListExists($db, $allowListId)) {
             jsonResponse(['error' => 'No allow list available. Create one first (e.g. cscli allowlist create).'], 400);
         }
+        $allowListName = getAllowListNameById($db, $allowListId);
+        if (!$allowListName) {
+            jsonResponse(['error' => 'Allow list name not found.'], 400);
+        }
 
-        $db->beginTransaction();
-
-        $stmt = $db->prepare("
-            INSERT INTO allow_list_items (created_at, updated_at, expires_at, comment, value, start_ip, end_ip, start_suffix, end_suffix, ip_size)
-            VALUES (NOW(), NOW(), :expires_at, :comment, :value, :start_ip, :end_ip, :start_suffix, :end_suffix, :ip_size)
-        ");
-        $stmt->execute([
-            ':expires_at' => $expiresAt ?: null,
-            ':comment' => $comment !== '' ? $comment : null,
-            ':value' => $value,
-            ':start_ip' => $parsed['start_ip'],
-            ':end_ip' => $parsed['end_ip'],
-            ':start_suffix' => $parsed['start_suffix'],
-            ':end_suffix' => $parsed['end_suffix'],
-            ':ip_size' => $parsed['ip_size']
+        $result = executeCscliCommand([
+            'allowlists',
+            'add',
+            $allowListName,
+            $value,
+            '-d',
+            $comment !== '' ? $comment : 'manual',
         ]);
 
-        $id = $db->lastInsertId();
+        if ($result['exit_code'] !== 0) {
+            jsonResponse([
+                'error' => $result['output'] !== '' ? $result['output'] : 'cscli add failed',
+                'command' => $result['command'],
+            ], 500);
+        }
 
-        $stmt = $db->prepare("
-            INSERT INTO allow_list_allowlist_items (allow_list_id, allow_list_item_id)
-            VALUES (:allow_list_id, :allow_list_item_id)
-        ");
-        $stmt->execute([
-            ':allow_list_id' => $allowListId,
-            ':allow_list_item_id' => $id
-        ]);
-
-        $db->commit();
         auditLog('whitelist.add', [
-            'id' => $id,
             'cidr' => $value,
             'reason' => $comment,
-            'expires_at' => $expiresAt,
-            'allow_list_id' => $allowListId
+            'allow_list_id' => $allowListId,
+            'allow_list_name' => $allowListName,
+            'command' => $result['command'],
+            'result' => $result['output'],
         ]);
 
-        jsonResponse(['message' => 'Whitelist item created', 'id' => $id], 201);
+        jsonResponse([
+            'message' => 'Whitelist item created',
+            'allow_list_name' => $allowListName,
+            'command' => $result['command'],
+            'output' => $result['output'],
+        ], 201);
     } elseif ($method === 'PUT') {
         $input = json_decode(file_get_contents('php://input'), true);
         $id = $input['id'] ?? null;
@@ -283,7 +301,7 @@ try {
 
         $stmt = $db->prepare("
             UPDATE allow_list_items
-            SET updated_at = NOW(),
+            SET updated_at = UTC_TIMESTAMP(),
                 expires_at = :expires_at,
                 comment = :comment,
                 value = :value,

@@ -118,31 +118,6 @@ function renderAuditDetails($details) {
     return '<div class="audit-detail-plain">' . htmlspecialchars((string) $details) . '</div>';
 }
 
-function buildPaginationPages($current, $total) {
-    if ($total <= 7) {
-        return range(1, $total);
-    }
-
-    $pages = [1];
-    $start = max(2, $current - 2);
-    $end = min($total - 1, $current + 2);
-
-    if ($start > 2) {
-        $pages[] = '...';
-    }
-
-    for ($page = $start; $page <= $end; $page++) {
-        $pages[] = $page;
-    }
-
-    if ($end < $total - 1) {
-        $pages[] = '...';
-    }
-
-    $pages[] = $total;
-    return $pages;
-}
-
 renderPageStart($appTitle . ' - Audit Log', 'audit', $appTitle);
 ?>
     <section class="page-header">

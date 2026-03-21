@@ -11,6 +11,8 @@ requireLogin();
 $env = loadEnv();
 $appTitle = $env['APP_TITLE'] ?? 'CrowdSec Admin';
 $flash = getFlashMessage();
+$filterSessionKey = 'decisionsfilters';
+initFilterSession($filterSessionKey);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -22,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $type = trim((string) ($_POST['type'] ?? 'ban'));
 
         if ($ip === '') {
-            setFlashMessage('error', 'IP adresa je povinná.');
+            setFlashMessage('error', 'IP adresa je povinna.');
         } else {
             try {
                 $api = new CrowdSecAPI();
@@ -32,13 +34,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'value' => $ip,
                         'type' => $type,
                         'duration' => $duration,
-                        'reason' => $reason
+                        'reason' => $reason,
                     ],
-                    'result' => $result
+                    'result' => $result,
                 ]);
-                setFlashMessage('success', 'Ban byl úspěšně přidán.');
+                setFlashMessage('success', 'Ban byl uspesne pridan.');
             } catch (Exception $e) {
-                setFlashMessage('error', 'Nepodařilo se přidat ban: ' . $e->getMessage());
+                setFlashMessage('error', 'Nepodarilo se pridat ban: ' . $e->getMessage());
             }
         }
     }
@@ -60,14 +62,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $api->deleteDecision($id);
                 auditLog('decision.unban', [
                     'id' => $id,
-                    'decision' => $decisionDetails
+                    'decision' => $decisionDetails,
                 ]);
                 setFlashMessage('success', 'Ban byl odstraněn.');
             } catch (Exception $e) {
-                setFlashMessage('error', 'Nepodařilo se odebrat ban: ' . $e->getMessage());
+                setFlashMessage('error', 'Nepodarilo se odebrat ban: ' . $e->getMessage());
             }
         } else {
-            setFlashMessage('error', 'Neplatné ID rozhodnutí.');
+            setFlashMessage('error', 'Neplatne ID rozhodnuti.');
         }
     }
 
@@ -76,13 +78,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $filters = [
-    'value' => trim((string) ($_GET['value'] ?? '')),
-    'scenario' => trim((string) ($_GET['scenario'] ?? '')),
-    'type' => trim((string) ($_GET['type'] ?? '')),
-    'country' => trim((string) ($_GET['country'] ?? '')),
-    'status' => trim((string) ($_GET['status'] ?? '')),
-    'include_expired' => isset($_GET['include_expired']) && $_GET['include_expired'] === '1',
-    'hide_duplicates' => !isset($_GET['hide_duplicates']) || $_GET['hide_duplicates'] === '1'
+    'value' => trim((string) getFilterValue('value', $filterSessionKey)),
+    'scenario' => trim((string) getFilterValue('scenario', $filterSessionKey)),
+    'type' => trim((string) getFilterValue('type', $filterSessionKey)),
+    'country' => trim((string) getFilterValue('country', $filterSessionKey)),
+    'include_expired' => getFilterValue('include_expired', $filterSessionKey) === '1',
+    'hide_duplicates' => getFilterValue('hide_duplicates', $filterSessionKey) !== '0',
 ];
 
 $perPage = (int) ($_GET['per_page'] ?? 50);
@@ -90,13 +91,14 @@ $perPage = max(10, min($perPage, 200));
 $page = max(1, (int) ($_GET['page'] ?? 1));
 
 $decisions = [];
+$formatted = [];
 $totalDecisions = 0;
 $totalPages = 1;
 $filterOptions = [
     'values' => [],
     'scenarios' => [],
     'types' => [],
-    'countries' => []
+    'countries' => [],
 ];
 
 try {
@@ -110,8 +112,10 @@ try {
     $conditions = [];
     $params = [];
 
-    if (!$filters['include_expired']) {
-        $conditions[] = 'd.until > NOW()';
+    if ($filters['include_expired']) {
+        $conditions[] = 'd.until < UTC_TIMESTAMP()';
+    } else {
+        $conditions[] = 'd.until >= UTC_TIMESTAMP()';
     }
 
     $filterDefinitions = [
@@ -119,38 +123,29 @@ try {
             'key' => 'value',
             'column' => 'd.value',
             'operator' => 'like',
-            'lowercase' => true
+            'lowercase' => true,
         ],
         [
             'key' => 'scenario',
             'column' => 'd.scenario',
             'operator' => 'like',
-            'lowercase' => true
+            'lowercase' => true,
         ],
         [
             'key' => 'type',
             'column' => 'd.type',
             'operator' => 'like',
-            'lowercase' => true
+            'lowercase' => true,
         ],
         [
             'key' => 'country',
             'column' => 'a.source_country',
             'operator' => 'like',
-            'lowercase' => true
+            'lowercase' => true,
         ],
     ];
 
     $conditions = array_merge($conditions, buildFilterConditions($filters, $filterDefinitions, $params));
-
-    $statusFilter = strtolower($filters['status']);
-    if ($statusFilter !== '') {
-        if (str_contains($statusFilter, 'expi')) {
-            $conditions[] = 'd.until < NOW()';
-        } elseif (str_contains($statusFilter, 'aktiv') || str_contains($statusFilter, 'active')) {
-            $conditions[] = 'd.until >= NOW()';
-        }
-    }
 
     $whereSql = buildWhereClause($conditions);
 
@@ -170,28 +165,27 @@ try {
             a.id as alert_id
         FROM decisions d
         LEFT JOIN alerts a ON d.alert_decisions = a.id
-        {$whereSql}
+        WHERE {$whereSql}
         ORDER BY d.created_at DESC
     ");
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->execute();
+    $stmt->execute($params);
     $decisions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $formatted = [];
     foreach ($decisions as $decision) {
-        $expired = $decision['until'] ? strtotime($decision['until']) < time() : false;
+        $untilTs = parseCrowdSecTimestamp($decision['until'] ?? null);
+        $expired = $untilTs !== null && $untilTs < time();
         $formatted[] = [
-            'id' => $decision['id'],
+            'id' => (int) $decision['id'],
             'created_at' => $decision['created_at'],
-            'value' => $decision['value'],
-            'type' => $decision['type'],
-            'scenario' => $decision['scenario'],
-            'country' => $decision['source_country'] ?? 'Unknown',
+            'value' => (string) ($decision['value'] ?? ''),
+            'type' => (string) ($decision['type'] ?? ''),
+            'scenario' => (string) ($decision['scenario'] ?? ''),
+            'country' => (string) ($decision['source_country'] ?? ''),
             'expiration' => $decision['until'],
-            'status' => $expired ? 'Expirované' : 'Aktivní',
-            'expired' => $expired
+            'status' => $expired ? 'Expirovane' : 'Aktivni',
+            'expired' => $expired,
+            'origin' => (string) ($decision['origin'] ?? ''),
+            'alert_id' => isset($decision['alert_id']) ? (int) $decision['alert_id'] : null,
         ];
     }
 
@@ -215,7 +209,7 @@ try {
     unset($decision);
 
     if ($filters['hide_duplicates']) {
-        $formatted = array_values(array_filter($formatted, function ($decision) {
+        $formatted = array_values(array_filter($formatted, static function (array $decision): bool {
             return empty($decision['is_duplicate']);
         }));
     }
@@ -235,191 +229,271 @@ $buildQuery = function (array $overrides = []) use ($filters, $perPage) {
         'scenario' => $filters['scenario'],
         'type' => $filters['type'],
         'country' => $filters['country'],
-        'status' => $filters['status'],
         'include_expired' => $filters['include_expired'] ? '1' : null,
-        'hide_duplicates' => $filters['hide_duplicates'] ? '1' : null,
-        'per_page' => $perPage
+        'hide_duplicates' => $filters['hide_duplicates'] ? '1' : '0',
+        'per_page' => $perPage,
     ], $overrides);
 
     return buildQueryString($query);
 };
 
+$decisionFilterDefinitions = [
+    'value' => [
+        'key' => 'value',
+        'type' => 'text',
+        'label' => 'IP / hodnota',
+        'icon' => 'fas fa-network-wired',
+        'placeholder' => 'napr. 185.197.9.26',
+        'value' => $filters['value'],
+        'class' => 'filter-group',
+        'max_width' => 170,
+    ],
+    'scenario' => [
+        'key' => 'scenario',
+        'type' => 'text',
+        'label' => 'Scenar',
+        'icon' => 'fas fa-layer-group',
+        'placeholder' => 'napr. generic:scan',
+        'value' => $filters['scenario'],
+        'class' => 'filter-group',
+        'max_width' => 220,
+    ],
+    'type' => [
+        'key' => 'type',
+        'type' => 'text',
+        'label' => 'Typ',
+        'icon' => 'fas fa-gavel',
+        'placeholder' => 'napr. ban',
+        'value' => $filters['type'],
+        'class' => 'filter-group',
+        'max_width' => 120,
+    ],
+    'country' => [
+        'key' => 'country',
+        'type' => 'text',
+        'label' => 'Zeme',
+        'icon' => 'fas fa-flag',
+        'placeholder' => 'napr. CZ',
+        'value' => $filters['country'],
+        'class' => 'filter-group',
+        'max_width' => 100,
+    ],
+    'include_expired' => [
+        'key' => 'include_expired',
+        'type' => 'checkbox',
+        'label' => 'Jen expirovane',
+        'icon' => 'fas fa-clock-rotate-left',
+        'value' => $filters['include_expired'] ? '1' : '',
+        'class' => 'filter-group',
+        'max_width' => 150,
+    ],
+    'hide_duplicates' => [
+        'key' => 'hide_duplicates',
+        'type' => 'checkbox',
+        'label' => 'Skryt duplikaty',
+        'icon' => 'fas fa-copy',
+        'value' => $filters['hide_duplicates'] ? '1' : '',
+        'class' => 'filter-group',
+        'max_width' => 150,
+    ],
+    '_meta' => [
+        'form_id' => 'decisionFilterForm',
+        'reset_url' => '/decisions.php?reset_filters=1',
+    ],
+];
+
 renderPageStart($appTitle . ' - Decisions', 'decisions', $appTitle);
 ?>
-    <section class="page-header">
-        <div>
-            <h1>Rozhodnutí</h1>
-            <p class="muted">Aktivní a expirované bany.</p>
-        </div>
-        <div class="toolbar">
-            <a class="btn" href="/decisions.php?<?= htmlspecialchars($buildQuery()) ?>">Obnovit</a>
-        </div>
-    </section>
+    <div class="container">
+        <section class="page-header">
+            <div>
+                <h1>Rozhodnuti</h1>
+                <p class="muted">Prehled aktivnich i expirovanych decisionu v CrowdSec. Celkem <strong><?= $totalDecisions ?></strong> zaznamu.</p>
+            </div>
+            <div class="toolbar">
+                <button type="button" class="btn" onclick="void showAddDecisionModal()">Pridat novy ban</button>
+            </div>
+        </section>
 
-    <?php if ($flash): ?>
-        <div class="flash-message <?= htmlspecialchars($flash['type']) ?>">
-            <?= htmlspecialchars($flash['message']) ?>
-        </div>
-    <?php endif; ?>
+        <?php if ($flash): ?>
+            <div class="flash-message <?= htmlspecialchars($flash['type']) ?>">
+                <?= htmlspecialchars($flash['message']) ?>
+            </div>
+        <?php endif; ?>
 
-    <section class="card">
-        <div class="card-header">
-            <h2>Přidat nový ban</h2>
-        </div>
-        <div class="card-body">
-            <form method="post" class="form-grid">
-                <input type="hidden" name="action" value="add">
-                <div class="form-group">
-                    <label>IP adresa</label>
-                    <input type="text" name="ip" required placeholder="192.168.1.1">
-                </div>
-                <div class="form-group">
-                    <label>Doba trvání</label>
-                    <select name="duration">
-                        <option value="1h">1 hodina</option>
-                        <option value="4h" selected>4 hodiny</option>
-                        <option value="24h">24 hodin</option>
-                        <option value="168h">7 dnů</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Důvod</label>
-                    <input type="text" name="reason" value="manual" placeholder="manual">
-                </div>
-                <button type="submit" class="btn">Přidat ban</button>
-            </form>
-        </div>
-    </section>
+        <?= renderSearchFilters($decisionFilterDefinitions) ?>
 
-    <form class="table-filters" method="get">
-        <div class="filter-group">
-            <label for="decisionFilterValue">IP / Hodnota</label>
-            <input type="text" id="decisionFilterValue" name="value" list="decisionValueList" placeholder="např. 10.0.0.1" value="<?= htmlspecialchars($filters['value']) ?>">
-            <datalist id="decisionValueList">
-                <?php foreach ($filterOptions['values'] as $value): ?>
-                    <option value="<?= htmlspecialchars($value) ?>"></option>
-                <?php endforeach; ?>
-            </datalist>
-        </div>
-        <div class="filter-group">
-            <label for="decisionFilterScenario">Scénář</label>
-            <input type="text" id="decisionFilterScenario" name="scenario" list="decisionScenarioList" placeholder="např. ssh-bf" value="<?= htmlspecialchars($filters['scenario']) ?>">
-            <datalist id="decisionScenarioList">
-                <?php foreach ($filterOptions['scenarios'] as $scenario): ?>
-                    <option value="<?= htmlspecialchars($scenario) ?>"></option>
-                <?php endforeach; ?>
-            </datalist>
-        </div>
-        <div class="filter-group">
-            <label for="decisionFilterType">Typ</label>
-            <input type="text" id="decisionFilterType" name="type" list="decisionTypeList" placeholder="např. ban" value="<?= htmlspecialchars($filters['type']) ?>">
-            <datalist id="decisionTypeList">
-                <?php foreach ($filterOptions['types'] as $type): ?>
-                    <option value="<?= htmlspecialchars($type) ?>"></option>
-                <?php endforeach; ?>
-            </datalist>
-        </div>
-        <div class="filter-group">
-            <label for="decisionFilterCountry">Země</label>
-            <input type="text" id="decisionFilterCountry" name="country" list="decisionCountryList" placeholder="např. CZ" value="<?= htmlspecialchars($filters['country']) ?>">
-            <datalist id="decisionCountryList">
-                <?php foreach ($filterOptions['countries'] as $country): ?>
-                    <option value="<?= htmlspecialchars($country) ?>"></option>
-                <?php endforeach; ?>
-            </datalist>
-        </div>
-        <div class="filter-group">
-            <label for="decisionFilterStatus">Status</label>
-            <input type="text" id="decisionFilterStatus" name="status" list="decisionStatusList" placeholder="Aktivní / Expirované" value="<?= htmlspecialchars($filters['status']) ?>">
-            <datalist id="decisionStatusList">
-                <option value="Aktivní"></option>
-                <option value="Expirované"></option>
-            </datalist>
-        </div>
-        <div class="filter-group checkbox">
-            <label>
-                <input type="checkbox" name="include_expired" value="1" <?= $filters['include_expired'] ? 'checked' : '' ?>>
-                <span>Zobrazit expirované</span>
-            </label>
-        </div>
-        <div class="filter-group checkbox">
-            <label>
-                <input type="checkbox" name="hide_duplicates" value="1" <?= $filters['hide_duplicates'] ? 'checked' : '' ?>>
-                <span>Skrýt duplikáty</span>
-            </label>
-        </div>
-        <div class="filter-actions">
-            <button class="btn btn-ghost" type="submit">Filtrovat</button>
-            <a class="btn btn-ghost" href="/decisions.php">Vyčistit filtry</a>
-        </div>
-    </form>
+        <section class="card">
+            <div class="card-body">
+                <table class="data-table data-table-compact alerts-table" id="decisionsTable">
+                    <?php
+                    echo renderMessagesTableHeader([
+                        'columns' => [
+                            'created_at',
+                            'scenario',
+                            'source_ip',
+                            ['key' => 'type', 'label' => 'Typ', 'sortable' => false],
+                            ['key' => 'country', 'label' => 'Zeme', 'sortable' => false],
+                            ['key' => 'expiration', 'label' => 'Expirace', 'sortable' => false],
+                            ['key' => 'status', 'label' => 'Status', 'sortable' => false],
+                            ['key' => 'actions', 'label' => 'Akce', 'sortable' => false],
+                        ],
+                    ]);
+                    ?>
+                    <tbody>
+                        <?php if (empty($formatted)): ?>
+                            <tr><td colspan="8" class="muted">Zadna data</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($formatted as $decision): ?>
+                                <?php
+                                $ipValue = (string) $decision['value'];
+                                $scenarioValue = (string) $decision['scenario'];
+                                $countryCode = strtolower((string) $decision['country']);
+                                $countryTitle = $countryCode !== '' ? strtoupper($countryCode) : '-';
+                                $flag = $countryCode !== '' && preg_match('/^[a-z]{2}$/', $countryCode)
+                                    ? '<span class="fi fi-' . htmlspecialchars($countryCode) . '" title="' . htmlspecialchars($countryTitle) . '"></span>'
+                                    : '-';
+                                $statusClass = $decision['expired'] ? 'badge-expired' : 'badge-active';
+                                $statusLabel = $decision['expired'] ? 'Expirovane' : 'Aktivni';
+                                $duplicateBadge = !empty($decision['is_duplicate'])
+                                    ? ' <span class="badge badge-duplicate">Duplikat</span>'
+                                    : '';
+                                $scenarioLink = $scenarioValue !== ''
+                                    ? '/decisions.php?' . buildQueryString(array_merge($filters, ['scenario' => $scenarioValue, 'page' => 1]))
+                                    : '';
+                                $ipLink = $ipValue !== ''
+                                    ? '/decisions.php?' . buildQueryString(array_merge($filters, ['value' => $ipValue, 'page' => 1]))
+                                    : '';
+                                $countryLink = $countryCode !== ''
+                                    ? '/decisions.php?' . buildQueryString(array_merge($filters, ['country' => strtoupper($countryCode), 'page' => 1]))
+                                    : '';
+                                ?>
+                                <tr>
+                                    <td><?= htmlspecialchars(formatDateTime($decision['created_at'])) ?></td>
+                                    <td>
+                                        <?php if ($scenarioLink !== ''): ?>
+                                            <a href="<?= htmlspecialchars($scenarioLink) ?>" class="filter-link" title="Filtrovat podle scenare">
+                                                <?= htmlspecialchars($scenarioValue) ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <?= htmlspecialchars($scenarioValue !== '' ? $scenarioValue : '-') ?>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($ipLink !== ''): ?>
+                                            <span class="ip-cell">
+                                                <a href="<?= htmlspecialchars($ipLink) ?>" class="filter-link" title="Filtrovat podle IP">
+                                                    <?= htmlspecialchars($ipValue) ?>
+                                                </a>
+                                                <button
+                                                    type="button"
+                                                    class="icon-btn icon-btn-mini icon-btn-primary"
+                                                    onclick="void showIpIntelModal(event, '<?= htmlspecialchars($ipValue, ENT_QUOTES) ?>')"
+                                                    aria-label="WHOIS detail IP <?= htmlspecialchars($ipValue) ?>"
+                                                    title="WHOIS detail">
+                                                    <i class="fa-solid fa-circle-info"></i>
+                                                </button>
+                                            </span>
+                                        <?php else: ?>
+                                            <?= htmlspecialchars($ipValue !== '' ? $ipValue : '-') ?>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= htmlspecialchars($decision['type']) ?></td>
+                                    <td class="text-center">
+                                        <?php if ($countryLink !== ''): ?>
+                                            <a href="<?= htmlspecialchars($countryLink) ?>" class="country-link" title="Filtrovat podle zeme">
+                                                <?= $flag ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <?= $flag ?>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= htmlspecialchars(formatDateTime($decision['expiration'])) ?></td>
+                                    <td><span class="badge <?= $statusClass ?>"><?= $statusLabel ?></span><?= $duplicateBadge ?></td>
+                                    <td>
+                                        <div class="table-actions">
+                                            <?php if (!empty($decision['alert_id'])): ?>
+                                                <button type="button" class="icon-btn icon-btn-primary" onclick="void viewAlert(<?= (int) $decision['alert_id'] ?>)" aria-label="Detail alertu" title="Detail alertu">
+                                                    <i class="fa-solid fa-eye"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <form method="post" onsubmit="return confirm('Opravdu chcete odstranit tento ban?');">
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="id" value="<?= (int) $decision['id'] ?>">
+                                                <button type="submit" class="icon-btn icon-btn-danger" aria-label="Odebrat ban" title="Odebrat ban">
+                                                    <i class="fa-solid fa-trash"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
 
-    <section class="card">
-        <div class="card-body">
-            <table class="data-table data-table-compact" id="decisionsTable">
-                <?php
-                echo renderMessagesTableHeader([
-                    'columns' => [
-                        ['key' => 'id', 'label' => 'ID', 'sortable' => false],
-                        ['key' => 'created_at', 'label' => 'Čas', 'sortable' => false],
-                        ['key' => 'value', 'label' => 'IP adresa', 'sortable' => false],
-                        ['key' => 'type', 'label' => 'Typ', 'sortable' => false],
-                        ['key' => 'scenario', 'label' => 'Scénář', 'sortable' => false],
-                        ['key' => 'country', 'label' => 'Země', 'sortable' => false],
-                        ['key' => 'expiration', 'label' => 'Expirace', 'sortable' => false],
-                        ['key' => 'status', 'label' => 'Status', 'sortable' => false],
-                        ['key' => 'actions', 'label' => 'Akce', 'sortable' => false],
-                    ],
-                ]);
-                ?>
-                <tbody>
-                    <?php if (empty($formatted)): ?>
-                        <tr><td colspan="9" class="muted">Žádná data</td></tr>
-                    <?php else: ?>
-                        <?php foreach ($formatted as $decision): ?>
-                            <tr>
-                                <td><?= (int) $decision['id'] ?></td>
-                                <td><?= htmlspecialchars(formatDateTime($decision['created_at'])) ?></td>
-                                <td><?= htmlspecialchars((string) $decision['value']) ?></td>
-                                <td><?= htmlspecialchars((string) $decision['type']) ?></td>
-                                <td><?= htmlspecialchars((string) $decision['scenario']) ?></td>
-                                <td><?= htmlspecialchars((string) $decision['country']) ?></td>
-                                <td><?= htmlspecialchars(formatDateTime($decision['expiration'])) ?></td>
-                                <td><?= htmlspecialchars($decision['status']) ?></td>
-                                <td>
-                                    <form method="post" onsubmit="return confirm('Opravdu chcete odstranit tento ban?');">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="id" value="<?= (int) $decision['id'] ?>">
-                                        <button type="submit" class="btn btn-ghost btn-small">Odebrat</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </section>
+        <?= renderPagination([
+            'current' => $page,
+            'total' => $totalPages,
+            'buildQuery' => fn(array $params) => $buildQuery($params),
+            'baseUrl' => '/decisions.php',
+        ]) ?>
 
-    <?php if ($totalPages > 1): ?>
-        <div class="pagination">
-            <?php
-                $pages = buildPaginationPages($page, $totalPages);
-                $prevPage = max(1, $page - 1);
-                $nextPage = min($totalPages, $page + 1);
-            ?>
-            <a class="pagination-link <?= $page === 1 ? 'disabled' : '' ?>" href="/decisions.php?<?= htmlspecialchars($buildQuery(['page' => $prevPage])) ?>">&laquo; Předchozí</a>
-            <?php foreach ($pages as $pageNumber): ?>
-                <?php if ($pageNumber === '...'): ?>
-                    <span class="pagination-ellipsis">…</span>
-                <?php else: ?>
-                    <a class="pagination-link <?= (int) $pageNumber === $page ? 'active' : '' ?>" href="/decisions.php?<?= htmlspecialchars($buildQuery(['page' => $pageNumber])) ?>">
-                        <?= $pageNumber ?>
-                    </a>
-                <?php endif; ?>
-            <?php endforeach; ?>
-            <a class="pagination-link <?= $page === $totalPages ? 'disabled' : '' ?>" href="/decisions.php?<?= htmlspecialchars($buildQuery(['page' => $nextPage])) ?>">Další &raquo;</a>
+        <div class="modal" id="ipIntelModal" aria-hidden="true">
+            <div class="modal-content">
+                <button type="button" class="modal-close" aria-label="Zavrit detail IP">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div id="ipIntelDetail"></div>
+            </div>
         </div>
-    <?php endif; ?>
+
+        <div class="modal" id="alertModal" aria-hidden="true">
+            <div class="modal-content">
+                <button type="button" class="modal-close" aria-label="Zavrit detail alertu">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div id="alertDetail"></div>
+            </div>
+        </div>
+
+        <div class="modal" id="addDecisionModal" aria-hidden="true">
+            <div class="modal-content">
+                <button type="button" class="modal-close" aria-label="Zavrit formular noveho banu">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <h3>Pridat novy ban</h3>
+                <form id="addDecisionForm" class="form-grid">
+                    <div class="form-group">
+                        <label for="banIp">IP adresa</label>
+                        <input type="text" id="banIp" required placeholder="192.168.1.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="banDuration">Doba trvani</label>
+                        <select id="banDuration">
+                            <option value="1h">1 hodina</option>
+                            <option value="4h" selected>4 hodiny</option>
+                            <option value="24h">24 hodin</option>
+                            <option value="168h">7 dnu</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="banReason">Duvod</label>
+                        <input type="text" id="banReason" value="manual" placeholder="manual">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn">Ulozit</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script>
+    window.setTimeout(function() {
+        window.location.reload();
+    }, 30000);
+    </script>
 <?php
 renderPageEnd();

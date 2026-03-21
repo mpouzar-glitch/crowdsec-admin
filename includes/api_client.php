@@ -219,7 +219,7 @@ class CrowdSecAPI {
         
         return json_decode($response, true);
     }
-    
+
     public function getAlerts($since = null, $until = null, $limit = 10000) {
         $url = $this->baseUrl . '/v1/alerts';
         $params = ['limit' => $limit];

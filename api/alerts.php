@@ -13,7 +13,7 @@ header('Access-Control-Allow-Origin: *');
 
 $env = loadEnv();
 $lookbackMs = parseLookbackToMs($env['LOOKBACK_PERIOD'] ?? '7d');
-$since = date('Y-m-d H:i:s', (time() * 1000 - $lookbackMs) / 1000);
+$since = gmdate('Y-m-d H:i:s', (time() * 1000 - $lookbackMs) / 1000);
 $repeatedWindowSeconds = 5 * 60;
 
 function buildAlertFilters($since) {
@@ -230,7 +230,7 @@ try {
         $alertData['decisions'] = $stmt->fetchAll();
 
         foreach ($alertData['decisions'] as &$decision) {
-            $decision['expired'] = strtotime($decision['until']) < time();
+            $decision['expired'] = (($untilTs = parseCrowdSecTimestamp($decision['until'] ?? null)) !== null) && $untilTs < time();
         }
 
         $stmt = $db->prepare("
@@ -325,7 +325,7 @@ try {
 
             // Check if decisions are expired
             foreach ($alert['decisions'] as &$decision) {
-                $decision['expired'] = strtotime($decision['until']) < time();
+                $decision['expired'] = (($untilTs = parseCrowdSecTimestamp($decision['until'] ?? null)) !== null) && $untilTs < time();
             }
         }
 

@@ -44,10 +44,24 @@ $filters = [
     'country' => trim((string) getFilterValue('country', $filterSessionKey)),
     'hostname' => trim((string) getFilterValue('hostname', $filterSessionKey)),
     'repeat_count' => trim((string) getFilterValue('repeat_count', $filterSessionKey)),
+    'show_repeat_count' => trim((string) getFilterValue('show_repeat_count', $filterSessionKey)),
     'decision_state' => trim((string) getFilterValue('decision_state', $filterSessionKey)),
     'datefrom' => trim((string) getFilterValue('datefrom', $filterSessionKey)),
     'dateto' => trim((string) getFilterValue('dateto', $filterSessionKey)),
 ];
+
+$showRepeatCount = $filters['show_repeat_count'] === '1';
+
+if (!$showRepeatCount && $sort === 'ip_repeat_count') {
+    $sortConfig = buildAlertsSort('created_at', $sortDir, $sortableColumns);
+    $sort = $sortConfig['sort'];
+    $sortDir = $sortConfig['dir'];
+    $orderBy = $sortConfig['orderby'];
+}
+
+if (!$showRepeatCount) {
+    $filters['repeat_count'] = '';
+}
 
 $params = [];
 
@@ -79,6 +93,7 @@ try {
         'orderby' => $orderBy,
         'limit' => $appEnv['ITEMS_PER_PAGE'],
         'offset' => $offset,
+        'include_repeat_counts' => $showRepeatCount,
     ]);
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
@@ -96,6 +111,7 @@ $filterQuery = array_filter([
     'country' => $filters['country'],
     'hostname' => $filters['hostname'],
     'repeat_count' => $filters['repeat_count'],
+    'show_repeat_count' => $filters['show_repeat_count'],
     'decision_state' => $filters['decision_state'],
     'datefrom' => $filters['datefrom'],
     'dateto' => $filters['dateto'],
@@ -161,27 +177,6 @@ $filterDefinitions = [
         'class' => 'filter-group',
         'max_width' => 180,
     ],
-    'repeat_count' => [
-        'key' => 'repeat_count',
-        'type' => 'select',
-        'label' => 'Opakování',
-        'icon' => 'fas fa-repeat',
-        'value' => $filters['repeat_count'],
-        'class' => 'filter-group',
-        'max_width' => 140,
-        'options' => [
-            '' => 'Všechny',
-            '2+' => '2× a více',
-            '3+' => '3× a více',
-            '4+' => '4× a více',
-            '5+' => '5× a více',
-            '6+' => '6× a více',
-            '7+' => '7× a více',
-            '8+' => '8× a více',
-            '9+' => '9× a více',
-            '10+' => '10× a více',
-        ],
-    ],
     'decision_state' => [
         'key' => 'decision_state',
         'type' => 'select',
@@ -214,11 +209,45 @@ $filterDefinitions = [
         'class' => 'filter-group',
         'max_width' => 160,
     ],
+    'repeat_count' => [
+        'key' => 'repeat_count',
+        'type' => 'select',
+        'label' => 'Opakování',
+        'icon' => 'fas fa-repeat',
+        'value' => $filters['repeat_count'],
+        'class' => 'filter-group',
+        'max_width' => 140,
+        'options' => [
+            '' => 'Všechny',
+            '2+' => '2× a více',
+            '3+' => '3× a více',
+            '4+' => '4× a více',
+            '5+' => '5× a více',
+            '6+' => '6× a více',
+            '7+' => '7× a více',
+            '8+' => '8× a více',
+            '9+' => '9× a více',
+            '10+' => '10× a více',
+        ],
+    ],
+    'show_repeat_count' => [
+        'key' => 'show_repeat_count',
+        'type' => 'checkbox',
+        'label' => 'opakování',
+        'icon' => 'fas fa-repeat',
+        'value' => $filters['show_repeat_count'],
+        'class' => 'filter-group',
+        'max_width' => 170,
+    ],
     '_meta' => [
         'form_id' => 'alertFilterForm',
         'reset_url' => '/alerts.php?reset_filters=1',
     ],
 ];
+
+if (!$showRepeatCount) {
+    unset($filterDefinitions['repeat_count']);
+}
 
 renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
 //$refreshQuery = $buildQuery();
@@ -237,21 +266,25 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
         <section class="card">
             <table class="data-table data-table-compact alerts-table" id="alertsTable">
                 <?php
+                $tableColumns = [
+                    'created_at',
+                    'started_at',
+                    'scenario',
+                    'source_ip',
+                ];
+                if ($showRepeatCount) {
+                    $tableColumns[] = 'ip_repeat_count';
+                }
+                $tableColumns[] = 'hostname';
+                $tableColumns[] = 'source_country';
+                $tableColumns[] = 'events_count';
+                $tableColumns[] = ['key' => 'actions', 'label' => 'Akce', 'sortable' => false];
+
                 echo renderMessagesTableHeader([
                     'sort' => $sort,
                     'buildSortLink' => fn(string $column) => '/alerts.php' . $buildSortQuery($column),
                     'getSortIcon' => $getSortIcon,
-                    'columns' => [
-                        'created_at',
-                        'started_at',
-                        'scenario',
-                        'source_ip',
-                        'ip_repeat_count',
-                        'hostname',
-                        'source_country',
-                        'events_count',
-                        ['key' => 'actions', 'label' => 'Akce', 'sortable' => false],
-                    ],
+                    'columns' => $tableColumns,
                 ]);
                 ?>
                 <tbody>
@@ -316,19 +349,31 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <?php if ($ipLink !== ''): ?>
-                                        <a href="<?php echo htmlspecialchars($ipLink); ?>" class="filter-link <?= $ipHighlightClass ?>"<?= $ipHighlightStyle ?> title="Filtrovat podle IP">
-                                            <?php echo safe_html($sourceIp); ?>
-                                        </a>
+                                    <?php if ($sourceIp !== ''): ?>
+                                        <span class="ip-cell">
+                                            <?php if ($ipLink !== ''): ?>
+                                                <a href="<?php echo htmlspecialchars($ipLink); ?>" class="filter-link <?= $ipHighlightClass ?>"<?= $ipHighlightStyle ?> title="Filtrovat podle IP">
+                                                    <?php echo safe_html($sourceIp); ?>
+                                                </a>
+                                            <?php else: ?>
+                                                <span class="<?= $ipHighlightClass ?>"<?= $ipHighlightStyle ?>><?= safe_html($sourceIp) ?></span>
+                                            <?php endif; ?>
+                                            <button
+                                                type="button"
+                                                class="icon-btn icon-btn-mini icon-btn-primary"
+                                                onclick="void showIpIntelModal(event, '<?= htmlspecialchars($sourceIp, ENT_QUOTES) ?>')"
+                                                aria-label="WHOIS detail IP <?= htmlspecialchars($sourceIp) ?>"
+                                                title="WHOIS detail">
+                                                <i class="fa-solid fa-circle-info"></i>
+                                            </button>
+                                        </span>
                                     <?php else: ?>
-                                        <?php if ($sourceIp !== ''): ?>
-                                            <span class="<?= $ipHighlightClass ?>"<?= $ipHighlightStyle ?>><?= safe_html($sourceIp) ?></span>
-                                        <?php else: ?>
-                                            -
-                                        <?php endif; ?>
+                                        -
                                     <?php endif; ?>
                                 </td>
-                                <td class="text-center"><?= safe_html($repeatCountLabel) ?></td>
+                                <?php if ($showRepeatCount): ?>
+                                    <td class="text-center"><?= safe_html($repeatCountLabel) ?></td>
+                                <?php endif; ?>
                                 <td>
                                     <?php if ($hostnameLink !== ''): ?>
                                         <a href="<?php echo htmlspecialchars($hostnameLink); ?>" class="filter-link" title="Filtrovat podle hostname">
@@ -356,7 +401,7 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                                         <button type="button" class="icon-btn <?= $banClass ?>" onclick="void toggleAlertDecision(<?= $alertId ?>)" <?= $ipDisabled ? 'disabled' : '' ?> aria-label="<?= htmlspecialchars($banLabel) ?>" title="<?= htmlspecialchars($banLabel) ?>">
                                             <i class="fa-solid <?= $banIcon ?>"></i>
                                         </button>
-                                        <button type="button" class="icon-btn icon-btn-primary" onclick="void extendAlertDecision(<?= $alertId ?>)" <?= $extendDisabled ? 'disabled' : '' ?> aria-label="Prodloužit ban" title="Prodloužit ban">
+                                        <button type="button" class="icon-btn icon-btn-primary" onclick="void extendAlertDecision(<?= $alertId ?>, '<?= htmlspecialchars($sourceIp, ENT_QUOTES) ?>')" <?= $extendDisabled ? 'disabled' : '' ?> aria-label="Prodloužit ban" title="Prodloužit ban">
                                             <i class="fa-solid fa-clock"></i>
                                         </button>
                                         <button type="button" class="icon-btn icon-btn-success" onclick="void addAlertIpToWhitelist('<?= htmlspecialchars($sourceIp, ENT_QUOTES) ?>')" <?= $ipDisabled ? 'disabled' : '' ?> aria-label="Whitelist" title="Whitelist">
@@ -388,6 +433,38 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
                 <div id="ipIntelDetail"></div>
             </div>
         </div>
+        
+        <div class="modal" id="longTermBanModal" aria-hidden="true">
+            <div class="modal-content">
+                <button type="button" class="modal-close" aria-label="Zavrit formular dlouhodobeho banu">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <h3>Prodlouzit ban</h3>
+                <form id="longTermBanForm" class="form-grid">
+                    <div class="form-group">
+                        <label for="longTermBanIp">IP adresa</label>
+                        <input type="text" id="longTermBanIp" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="longTermBanDuration">Doba trvani</label>
+                        <select id="longTermBanDuration">
+                            <option value="1h">1 hodina</option>
+                            <option value="4h" selected>4 hodiny</option>
+                            <option value="24h">24 hodin</option>
+                            <option value="168h">7 dnu</option>
+                            <option value="720h">30 dnu</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="longTermBanReason">Duvod</label>
+                        <input type="text" id="longTermBanReason" value="extend" placeholder="extend">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn">Ulozit</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
     <?= renderPagination([
         'current' => $page,
@@ -395,5 +472,12 @@ renderPageStart($appTitle . ' - Alerts', 'alerts', $appTitle);
         'buildQuery' => $buildPaginationQuery,
         'baseUrl' => '/alerts.php',
     ]) ?>
+    <?php if (!$showRepeatCount): ?>
+        <script>
+        window.setTimeout(function() {
+            window.location.reload();
+        }, 30000);
+        </script>
+    <?php endif; ?>
 <?php
 renderPageEnd();
